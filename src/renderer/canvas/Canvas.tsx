@@ -6,16 +6,17 @@ import type { ProjectState } from '../../main/types';
 
 const nodeTypes = { project: ProjectNode };
 
-export function Canvas({ projects, onSelect }: {
+export function Canvas({ projects, onSelect, onDropMcp }: {
   projects: ProjectState[];
   onSelect: (p: ProjectState) => void;
+  onDropMcp?: (path: string, mcpId: string) => void;
 }) {
   const nodes = useMemo(() => projects.map((p, i) => ({
     id: p.path,
     type: 'project',
     position: { x: (i % 3) * 300 + 40, y: Math.floor(i / 3) * 240 + 40 },
-    data: p,
-  })), [projects]);
+    data: { ...p, onDropMcp },
+  })), [projects, onDropMcp]);
 
   return (
     <div style={{ flex: 1, height: '100%' }}>
