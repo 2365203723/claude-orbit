@@ -21,17 +21,22 @@ export function ProjectPlanet({ data }: NodeProps<ProjectPlanetData>) {
   const satAngle = (idx: number) => (idx / Math.max(mcp.length, 1)) * 2 * Math.PI - Math.PI / 2;
 
   return (
-    <div style={{
-      width: planetRadius * 2 + orbitRadius * 2 + 20,
-      height: planetRadius * 2 + orbitRadius * 2 + 20,
-      position: 'relative',
-    }}>
+    <div
+      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+      onDrop={e => {
+        e.preventDefault();
+        const id = e.dataTransfer.getData('application/x-mcp-id');
+        if (id && data.onDropMcp) data.onDropMcp(data.path, id);
+      }}
+      style={{ position: 'relative', width: planetRadius * 2 + orbitRadius * 2 + 20, height: planetRadius * 2 + orbitRadius * 2 + 20 }}
+    >
       {/* Gravity glow */}
       {isDragOver && (
         <div style={{
           position: 'absolute', inset: 0, borderRadius: '50%',
           background: 'radial-gradient(circle, var(--gravity-glow), transparent 70%)',
           opacity: .7, zIndex: 0, pointerEvents: 'none',
+          transition: 'opacity 0.2s ease',
         }} />
       )}
 
@@ -49,7 +54,7 @@ export function ProjectPlanet({ data }: NodeProps<ProjectPlanetData>) {
         }} />
       )}
 
-      {/* Planet body — click here to select, drag to move */}
+      {/* Planet body */}
       <div
         className="serif"
         onClick={() => data.onSelect?.()}
@@ -65,11 +70,10 @@ export function ProjectPlanet({ data }: NodeProps<ProjectPlanetData>) {
           boxShadow: `${isDragOver ? '0 0 28px var(--accent),' : ''} var(--glass-shadow), inset 0 2px 14px var(--glass-highlight)`,
           zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center',
           justifyContent: 'center',
+          cursor: 'pointer', userSelect: 'none',
           transition: 'box-shadow 0.3s cubic-bezier(0.34,1.56,0.64,1), transform 0.3s cubic-bezier(0.34,1.56,0.64,1)',
           fontSize: Math.max(11, Math.round(planetRadius / 3.5)),
           fontWeight: 600, color: 'var(--text-primary)',
-          cursor: 'pointer',
-          userSelect: 'none',
         }}>
         <span>{name}</span>
         <span style={{ fontSize: Math.max(9, Math.round(planetRadius / 5)),
@@ -97,7 +101,6 @@ export function ProjectPlanet({ data }: NodeProps<ProjectPlanetData>) {
             zIndex: 3,
             animation: `satelliteLand 0.4s cubic-bezier(0.34,1.56,0.64,1) both`,
           }}>
-            {/* 可点击卫星：hover 显示 ×，点击撤销 */}
             <div style={{ position: 'relative', display: 'inline-block', cursor:'default' }}>
               <div onClick={(e) => { e.stopPropagation(); data.onUnassignMcp?.(data.path, m.id); }}
                 style={{
@@ -127,17 +130,6 @@ export function ProjectPlanet({ data }: NodeProps<ProjectPlanetData>) {
           <span style={{ fontSize: 10, color: 'var(--state-pending)', marginLeft: 4 }}>+</span>
         </div>
       )}
-
-      {/* HTML5 DnD overlay — 拦截来自 LibraryRail 的拖拽，不干扰 React Flow */}
-      <div
-        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
-        onDrop={e => {
-          e.preventDefault();
-          const id = e.dataTransfer.getData('application/x-mcp-id');
-          if (id && data.onDropMcp) data.onDropMcp(data.path, id);
-        }}
-        style={{ position: 'absolute', inset: 0, zIndex: 10, pointerEvents: 'none' }}
-      />
     </div>
   );
 }
