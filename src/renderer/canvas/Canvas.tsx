@@ -61,7 +61,7 @@ export function Canvas({ projects, desiredMcp, lastApplied, onSelect, onDropMcp,
         ],
         libraryMcp: desiredMcp,
         draggingMcpId,
-        isDragOver: false,
+        isDragOver: draggingMcpId !== null,
         onDropMcp,
         onUnassignMcp,
         onSelect: () => onSelect(p),
@@ -71,7 +71,7 @@ export function Canvas({ projects, desiredMcp, lastApplied, onSelect, onDropMcp,
 
   return (
     <div style={{ flex: 1, height: '100%' }}>
-      <ReactFlow nodes={nodes} edges={[]} nodeTypes={nodeTypes} fitView nodesDraggable={true} selectNodesOnDrag={false}>
+      <ReactFlow nodes={nodes} edges={[]} nodeTypes={nodeTypes} fitView nodesDraggable={true} selectNodesOnDrag={false} onNodeClick={(_, n) => n.data?.onSelect?.()}>
         <Background
           variant={BackgroundVariant.Dots} gap={28} size={1.2}
           color="var(--orbit-line)"

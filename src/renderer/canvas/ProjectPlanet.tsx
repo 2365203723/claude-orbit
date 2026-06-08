@@ -136,7 +136,7 @@ export function ProjectPlanet({ data }: NodeProps<ProjectPlanetData>) {
           const id = e.dataTransfer.getData('application/x-mcp-id');
           if (id && data.onDropMcp) data.onDropMcp(data.path, id);
         }}
-        style={{ position: 'absolute', inset: 0, zIndex: 10 }}
+        style={{ position: 'absolute', inset: 0, zIndex: 10, pointerEvents: 'none' }}
       />
     </div>
   );
