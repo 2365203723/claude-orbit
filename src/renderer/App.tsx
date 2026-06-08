@@ -18,6 +18,7 @@ export function App() {
   const [pendingCount, setPendingCount] = useState(0);
   const [globalStatus, setGlobalStatus] = useState<{ eligible: string[]; blocked: string[] } | null>(null);
   const [retireId, setRetireId] = useState<string | null>(null);
+  const [draggingMcpId, setDraggingMcpId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     const [inferred, d, gs] = await Promise.all([
@@ -65,12 +66,19 @@ export function App() {
       </header>
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <div style={{ display: 'flex', flexDirection: 'column', width: 200 }}>
-          <LibraryRail mcp={libMcp} />
+          <LibraryRail mcp={libMcp} onDragStartMcp={setDraggingMcpId} onDragEndMcp={() => setDraggingMcpId(null)} />
           <div style={{ padding: '0 16px' }}>
             <GlobalCleanupSection status={globalStatus} onRetire={setRetireId} />
           </div>
         </div>
-        <Canvas projects={projects} onSelect={setSelected} onDropMcp={onDropMcp} />
+        <Canvas
+          projects={projects}
+          desiredMcp={desired?.library.mcp ?? {}}
+          lastApplied={desired?.lastApplied ?? {}}
+          onSelect={setSelected}
+          onDropMcp={onDropMcp}
+          draggingMcpId={draggingMcpId}
+        />
         <DetailPanel project={selected} />
       </div>
       <DiffModal plan={plan} onConfirm={confirmApply} onCancel={() => setPlan(null)} />
