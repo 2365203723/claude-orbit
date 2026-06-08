@@ -39,7 +39,7 @@ export function ProjectPlanet({ data }: NodeProps<ProjectPlanetData>) {
         <div style={{
           position: 'absolute', inset: 0, borderRadius: '50%',
           background: 'radial-gradient(circle, var(--gravity-glow), transparent 70%)',
-          opacity: .7, zIndex: 0,
+          opacity: .7, zIndex: 0, transition: 'opacity 0.2s ease',
         }} />
       )}
 
@@ -53,7 +53,7 @@ export function ProjectPlanet({ data }: NodeProps<ProjectPlanetData>) {
           transform: 'translate(-50%,-50%)',
           borderRadius: '50%',
           border: `1px solid ${isDragOver ? 'var(--orbit-line-active)' : 'var(--orbit-line)'}`,
-          zIndex: 0, pointerEvents: 'none',
+          zIndex: 0, pointerEvents: 'none', transition: 'border-color 0.2s ease',
         }} />
       )}
 
@@ -90,10 +90,15 @@ export function ProjectPlanet({ data }: NodeProps<ProjectPlanetData>) {
       {/* Satellite capsules */}
       {mcp.map((m, i) => {
         const a = satAngle(i);
-        const sx = planetRadius + orbitRadius + Math.cos(a) * (orbitRadius + planetRadius / 2) + orbitRadius + planetRadius - 8;
-        const sy = planetRadius + orbitRadius + Math.sin(a) * (orbitRadius + planetRadius / 2) + orbitRadius + planetRadius - 8;
+        const halfW = planetRadius + orbitRadius + 10;
+        const orbitDist = planetRadius + orbitRadius;
+        const sx = halfW + Math.cos(a) * orbitDist;
+        const sy = halfW + Math.sin(a) * orbitDist;
         return (
-          <div key={m.id} style={{ position: 'absolute', left: sx - 12, top: sy + 3, transform: 'translate(-50%,-50%)', zIndex: 3, pointerEvents: 'none' }}>
+          <div key={m.id} style={{
+            position: 'absolute', left: sx, top: sy,
+            transform: 'translate(-50%,-50%)', zIndex: 3, pointerEvents: 'none',
+          }}>
             <McpSatellite label={m.id} hasSecrets={m.hasSecrets} status={m.status} />
           </div>
         );

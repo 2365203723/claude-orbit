@@ -15,21 +15,31 @@ function statusOf(mcpId: string, project: ProjectState, assignedIds: string[], l
   return 'pending';
 }
 
-export function Canvas({ projects, desiredMcp, lastApplied, onSelect, onDropMcp, draggingMcpId }: {
+export function Canvas({ projects, desiredMcp, lastApplied, onSelect, onDropMcp, draggingMcpId, pendingAssignments }: {
   projects: ProjectState[];
   desiredMcp: Record<string, LibraryMcp>;
   lastApplied: Record<string, { mcpJson: Record<string,any>; localScope: Record<string,any> }>;
   onSelect: (p: ProjectState) => void;
   onDropMcp?: (path: string, mcpId: string) => void;
   draggingMcpId: string | null;
+  pendingAssignments?: Record<string, { mcp: string[] }>;
 }) {
   const layout = useMemo(() => {
-    const inputs = projects.map(p => ({ path: p.path, mcpCount: p.mcp.length }));
+    const assignments = pendingAssignments ?? {};
+    const inputs = projects.map(p => {
+      const existing = p.mcp.length;
+      const pending = (assignments[p.path]?.mcp ?? []).filter(id => !p.mcp.some(m => m.id === id)).length;
+      return { path: p.path, mcpCount: existing + pending };
+    });
     return computeOrbitLayout(inputs);
-  }, [projects]);
+  }, [projects, pendingAssignments]);
 
-  const nodes = useMemo(() => layout.map(l => {
+  const nodes = useMemo(() => {
+    const assignments = pendingAssignments ?? {};
+    return layout.map(l => {
     const p = projects.find(x => x.path === l.path)!;
+    const existing = p.mcp.map(m => m.id);
+    const pending = (assignments[l.path]?.mcp ?? []).filter(id => !existing.includes(id));
     const assigned = p.mcp.map(m => m.id);
     const applied = lastApplied[l.path];
     const landedIds = new Set<string>([
@@ -39,11 +49,15 @@ export function Canvas({ projects, desiredMcp, lastApplied, onSelect, onDropMcp,
     return {
       id: l.path,
       type: 'planet',
+      draggable: true,
       position: { x: l.x - l.safeRadius, y: l.y - l.safeRadius },
       data: {
         ...l,
         name: l.path.split('/').pop() || l.path,
-        mcp: p.mcp.map(m => ({ id: m.id, hasSecrets: m.hasSecrets, status: statusOf(m.id, p, assigned, landedIds) })),
+        mcp: [
+          ...p.mcp.map(m => ({ id: m.id, hasSecrets: m.hasSecrets, status: statusOf(m.id, p, assigned, landedIds) })),
+          ...pending.map(id => ({ id, hasSecrets: desiredMcp[id]?.hasSecrets ?? false, status: 'pending' as McpStatus })),
+        ],
         libraryMcp: desiredMcp,
         draggingMcpId,
         isDragOver: false,
@@ -51,11 +65,11 @@ export function Canvas({ projects, desiredMcp, lastApplied, onSelect, onDropMcp,
         onSelect: () => onSelect(p),
       },
     };
-  }), [layout, projects, lastApplied, desiredMcp, draggingMcpId, onDropMcp, onSelect]);
+  })}, [layout, projects, lastApplied, desiredMcp, pendingAssignments, draggingMcpId, onDropMcp, onSelect]);
 
   return (
     <div style={{ flex: 1, height: '100%' }}>
-      <ReactFlow nodes={nodes} edges={[]} nodeTypes={nodeTypes} fitView>
+      <ReactFlow nodes={nodes} edges={[]} nodeTypes={nodeTypes} fitView nodesDraggable={true}>
         <Background
           variant={BackgroundVariant.Dots} gap={28} size={1.2}
           color="var(--orbit-line)"

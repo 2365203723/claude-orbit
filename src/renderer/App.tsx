@@ -78,6 +78,7 @@ export function App() {
           onSelect={setSelected}
           onDropMcp={onDropMcp}
           draggingMcpId={draggingMcpId}
+          pendingAssignments={desired?.assignments}
         />
         <DetailPanel project={selected} />
       </div>
