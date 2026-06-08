@@ -31,6 +31,19 @@ export function App() {
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
 
+  // 全局 dragover: 让画布任何位置都允许接收 LibraryRail 的 MCP 拖放
+  // 不放节点级的 onDragOver,避免干扰 React Flow 的节点拖拽
+  useEffect(() => {
+    const handler = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('application/x-mcp-id')) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      }
+    };
+    document.addEventListener('dragover', handler);
+    return () => document.removeEventListener('dragover', handler);
+  }, []);
+
   const allProjectPaths = projects.map(p => p.path);
 
   useEffect(() => {

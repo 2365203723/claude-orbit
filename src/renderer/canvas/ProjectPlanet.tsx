@@ -22,7 +22,6 @@ export function ProjectPlanet({ data }: NodeProps<ProjectPlanetData>) {
 
   return (
     <div
-      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
       onDrop={e => {
         e.preventDefault();
         const id = e.dataTransfer.getData('application/x-mcp-id');
