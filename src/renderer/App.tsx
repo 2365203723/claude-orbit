@@ -68,6 +68,15 @@ export function App() {
     setDesired(await window.station.unassign(path, mcpId));
   }, []);
 
+  const onUnassignItem = useCallback(async (kind: string, id: string) => {
+    if (!selected) return;
+    const path = selected.path;
+    if (kind === 'mcp') setDesired(await window.station.unassign(path, id));
+    else if (kind === 'skill') setDesired(await window.station.unassignSkill(path, id));
+    else if (kind === 'plugin') setDesired(await window.station.unassignPlugin(path, id));
+    else if (kind === 'snippet') setDesired(await window.station.unassignSnippet(path, id));
+  }, [selected]);
+
   const openDiff = async () => setPlan(await window.station.plan(allProjectPaths));
   const confirmApply = async () => { await window.station.apply(allProjectPaths); setPlan(null); await reload(); };
   const confirmRetire = async () => {
@@ -117,7 +126,7 @@ export function App() {
           draggingItem={draggingItem}
           pendingAssignments={desired?.assignments}
         />
-        <DetailPanel project={selected} />
+        <DetailPanel project={selected} assignments={selected ? desired?.assignments[selected.path] : undefined} onUnassign={onUnassignItem} />
       </div>
       <DiffModal plan={plan} onConfirm={confirmApply} onCancel={() => setPlan(null)} />
       {retireId && (
