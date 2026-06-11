@@ -57,7 +57,7 @@ export function mergeSnippetClaudeMd(
     idsToClean.add(m[1]);
   }
 
-  // 移除所有 Claude Station 管理的 snippet 块
+  // 移除所有 Claude Orbit 管理的 snippet 块
   for (const id of idsToClean) {
     const start = MARKER_START(id);
     const end = MARKER_END(id);

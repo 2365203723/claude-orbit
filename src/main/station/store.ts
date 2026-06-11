@@ -1,15 +1,26 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import type { StationState } from './types';
-import { stationPaths } from './paths';
+import { orbitPaths } from './paths';
 
 export function emptyState(): StationState {
   return { version: 2, library: { mcp: {}, skills: {}, plugins: {}, snippets: {}, bundles: {} }, assignments: {}, lastApplied: {} };
 }
 
 export function loadState(home: string = homedir()): StationState {
-  const { stateFile } = stationPaths(home);
+  const { stateFile } = orbitPaths(home);
+  // 从旧名称 .claude-station 迁移到 .claude-orbit
+  const legacyStateDir = join(home, '.claude-station');
+  const legacyStateFile = join(legacyStateDir, 'state.json');
+  const legacyBackupsDir = join(legacyStateDir, 'backups');
+  if (!existsSync(stateFile) && existsSync(legacyStateFile)) {
+    try {
+      mkdirSync(join(home, '.claude-orbit'), { recursive: true });
+      renameSync(legacyStateFile, stateFile);
+      if (existsSync(legacyBackupsDir)) renameSync(legacyBackupsDir, join(home, '.claude-orbit', 'backups'));
+    } catch { /* 迁移失败继续,用新路径从空状态开始 */ }
+  }
   if (!existsSync(stateFile)) return emptyState();
   try {
     const raw = JSON.parse(readFileSync(stateFile, 'utf8'));
@@ -43,7 +54,7 @@ export function loadState(home: string = homedir()): StationState {
 }
 
 export function saveState(state: StationState, home: string = homedir()): void {
-  const { stateFile } = stationPaths(home);
+  const { stateFile } = orbitPaths(home);
   mkdirSync(dirname(stateFile), { recursive: true });
   writeFileSync(stateFile, JSON.stringify(state, null, 2));
 }

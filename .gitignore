@@ -6,3 +6,5 @@ out/
 .superpowers/
 .obsidian/
 graphify-out/
+release/
+node_modules/

@@ -8,7 +8,7 @@ import type { StationState } from './station/types';
 import { seedStateFromInferred } from './station/seed';
 import { assignMcp, unassignMcp, assignSkill, unassignSkill, assignPlugin, unassignPlugin, assignSnippet, unassignSnippet } from './station/assign';
 import { computeApplyPlan, executeApply } from './station/apply';
-import { stationPaths } from './station/paths';
+import { orbitPaths } from './station/paths';
 import { globalCleanupStatus, executeGlobalCleanup } from './station/cleanup';
 import { updateMcpEnv, maskEnvValue } from './station/env';
 import { detectBundles, createBundle, updateBundle, deleteBundle, assignBundle, unassignBundle, isInAssignedBundle } from './station/bundles';
@@ -30,7 +30,7 @@ export function registerIpc(): void {
   // 向后兼容:如果 state.json 是 M2 遗留(无 skills/plugins),从 inferred 补种。
   ipcMain.handle('station:loadDesired', () => {
     const home = homedir();
-    if (!existsSync(stationPaths(home).stateFile)) {
+    if (!existsSync(orbitPaths(home).stateFile)) {
       const seeded = seedStateFromInferred(buildState(home));
       saveState(seeded, home);
       return seeded;

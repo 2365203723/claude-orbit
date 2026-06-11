@@ -31,7 +31,7 @@ describe('executeApply', () => {
     const saved = loadState(home);
     expect(saved.lastApplied[proj].mcpJson).toEqual({});
     expect(saved.lastApplied[proj].localScope).toEqual({ exa: { command: 'exa' }, firecrawl: { command: 'npx', env: { K: 'v' } } });
-    expect(existsSync(join(home, '.claude-station', 'backups', '20260608-010101'))).toBe(true);
+    expect(existsSync(join(home, '.claude-orbit', 'backups', '20260608-010101'))).toBe(true);
     rmSync(home, { recursive: true, force: true });
   });
 

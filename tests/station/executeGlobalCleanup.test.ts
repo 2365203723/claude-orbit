@@ -23,7 +23,7 @@ describe('executeGlobalCleanup', () => {
     const cj = JSON.parse(readFileSync(resolvePaths(home).claudeJson, 'utf8'));
     expect(Object.keys(cj.mcpServers).sort()).toEqual(['codegraph', 'memory']);
     expect(cj.projects['/a'].lastCost).toBe(5);
-    expect(existsSync(join(home, '.claude-station', 'backups', '20260608-090909'))).toBe(true);
+    expect(existsSync(join(home, '.claude-orbit', 'backups', '20260608-090909'))).toBe(true);
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -34,7 +34,7 @@ describe('executeGlobalCleanup', () => {
     const removed = executeGlobalCleanup(['memory'], '20260608-101010', home);
     expect(removed).toEqual([]);
     expect(JSON.parse(readFileSync(resolvePaths(home).claudeJson, 'utf8')).mcpServers).toEqual({ memory: { command: 'm' } });
-    expect(existsSync(join(home, '.claude-station', 'backups', '20260608-101010'))).toBe(false);
+    expect(existsSync(join(home, '.claude-orbit', 'backups', '20260608-101010'))).toBe(false);
     rmSync(home, { recursive: true, force: true });
   });
 });

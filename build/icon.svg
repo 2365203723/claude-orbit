@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="planet" cx="40%" cy="35%">
+      <stop offset="0%" stop-color="#f5e6d3"/>
+      <stop offset="40%" stop-color="#d4a574"/>
+      <stop offset="100%" stop-color="#8b5e34"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%">
+      <stop offset="0%" stop-color="#d4a574" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#d4a574" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="orbit" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#d4a574" stop-opacity="0.6"/>
+      <stop offset="50%" stop-color="#f5e6d3" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#d4a574" stop-opacity="0.6"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="100" fill="#1a1a2e"/>
+  <!-- Glow -->
+  <circle cx="256" cy="256" r="200" fill="url(#glow)"/>
+  <!-- Orbit ring -->
+  <ellipse cx="256" cy="256" rx="180" ry="60" fill="none" stroke="url(#orbit)" stroke-width="3" transform="rotate(-20 256 256)"/>
+  <!-- Planet -->
+  <circle cx="256" cy="256" r="100" fill="url(#planet)"/>
+  <!-- Highlight -->
+  <ellipse cx="220" cy="210" rx="45" ry="30" fill="white" opacity="0.15" transform="rotate(-30 220 210)"/>
+  <!-- Small satellite -->
+  <circle cx="400" cy="210" r="18" fill="#f5e6d3" stroke="#d4a574" stroke-width="2"/>
+  <circle cx="394" cy="206" r="5" fill="white" opacity="0.2"/>
+  <!-- Second satellite -->
+  <circle cx="140" cy="330" r="12" fill="#f5e6d3" stroke="#d4a574" stroke-width="1.5"/>
+  <circle cx="137" cy="328" r="3" fill="white" opacity="0.2"/>
+</svg>
