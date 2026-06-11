@@ -154,7 +154,7 @@ export function App() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       <header style={{ height: 44, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)', WebkitUserSelect: 'none' }}>
-        <span className="serif" style={{ fontWeight: 600 }}>Claude Station</span>
+        <span className="serif" style={{ fontWeight: 600 }}>Claude Orbit</span>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <motion.button whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 500, damping: 30, mass: 0.8 }}
             onClick={() => setAddingProject(true)}

@@ -1,11 +1,11 @@
 {
-  "name": "claude-station",
-  "version": "0.1.0",
-  "description": "Visual capability-assembly station for Claude Code projects — manage MCPs, Skills, Plugins per project",
+  "name": "claude-orbit",
+  "version": "0.2.0",
+  "description": "Claude Orbit — visual capability assembly station for Claude Code projects. Drag MCP servers, Skills, and Plugins onto project planets with instant apply.",
   "main": "out/main/index.js",
   "type": "module",
   "license": "MIT",
-  "repository": "github:2365203723/claude-station",
+  "repository": "github:2365203723/claude-orbit",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
