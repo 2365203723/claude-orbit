@@ -6,6 +6,7 @@ import type { LibraryMcp, LibrarySkill, LibraryPlugin, LibrarySnippet, LibraryBu
 import type { PlanetPosition } from './orbitLayout';
 import type { DragItem } from './Canvas';
 import { springBouncy } from '../theme/springs';
+import { KIND_COLOR } from '../theme/kinds';
 
 interface ProjectPlanetData extends PlanetPosition {
   name: string;
@@ -20,6 +21,7 @@ interface ProjectPlanetData extends PlanetPosition {
   librarySnippets: Record<string, LibrarySnippet>;
   draggingItem: DragItem | null;
   isDragOver: boolean;
+  isPending?: boolean; // 拖拽即应用写盘中——星球脉冲指示
   onDropItem?: (path: string, kind: string, id: string) => void;
   onUnassignMcp?: (path: string, mcpId: string) => void;
   onUnassignBundle?: (path: string, bundleId: string) => void;
@@ -29,10 +31,8 @@ interface ProjectPlanetData extends PlanetPosition {
   isGlobal?: boolean;
 }
 
-const TYPE_COLORS: Record<string, string> = { mcp: '#D97757', skill: '#5B7553', plugin: '#C2965A', snippet: '#7B8DB5', bundle: '#9B6B9E' };
-
 export function ProjectPlanet({ data }: NodeProps<ProjectPlanetData>) {
-  const { name, mcp = [], skills = [], plugins = [], snippets = [], bundles = [], planetRadius, orbitRadius, draggingItem, isDragOver } = data;
+  const { name, mcp = [], skills = [], plugins = [], snippets = [], bundles = [], planetRadius, orbitRadius, draggingItem, isDragOver, isPending } = data;
   const libraryMcp = data.libraryMcp ?? {};
   const librarySkills = data.librarySkills ?? {};
   const libraryPlugins = data.libraryPlugins ?? {};
@@ -47,13 +47,13 @@ export function ProjectPlanet({ data }: NodeProps<ProjectPlanetData>) {
 
   const isGlobal = (data as any).isGlobal as boolean | undefined;
 
-  // 摘要行
+  // 摘要行 —— 「N 个 X」句式,专有名词保留英文,避免英文单复数
   const parts: { label: string; kind: string }[] = [];
-  if (bundles.length > 0) parts.push({ label: `${bundles.length} Bundle`, kind: 'bundle' });
-  if (mcp.length > 0) parts.push({ label: `${mcp.length} MCP`, kind: 'mcp' });
-  if (skills.length > 0) parts.push({ label: `${skills.length} Skill`, kind: 'skill' });
-  if (plugins.length > 0) parts.push({ label: `${plugins.length} Plugin`, kind: 'plugin' });
-  if (snippets.length > 0) parts.push({ label: `${snippets.length} 片段`, kind: 'snippet' });
+  if (bundles.length > 0) parts.push({ label: `${bundles.length} 个 Bundle`, kind: 'bundle' });
+  if (mcp.length > 0) parts.push({ label: `${mcp.length} 个 MCP`, kind: 'mcp' });
+  if (skills.length > 0) parts.push({ label: `${skills.length} 个 Skill`, kind: 'skill' });
+  if (plugins.length > 0) parts.push({ label: `${plugins.length} 个 Plugin`, kind: 'plugin' });
+  if (snippets.length > 0) parts.push({ label: `${snippets.length} 个 Snippet`, kind: 'snippet' });
 
   // 拖拽预览
   const draggedItemLabel = draggingItem ? (() => {
@@ -117,8 +117,12 @@ export function ProjectPlanet({ data }: NodeProps<ProjectPlanetData>) {
         onClick={() => data.onSelect?.()}
         whileHover={{ scale: 1.03 }}
         whileTap={{ scale: 0.94 }}
-        animate={{ boxShadow: `${isDragOver ? '0 0 28px var(--accent),' : ''} var(--glass-shadow), inset 0 2px 14px var(--glass-highlight)` }}
-        transition={springBouncy}
+        animate={{
+          boxShadow: `${isDragOver ? '0 0 28px var(--accent),' : ''} var(--glass-shadow), inset 0 2px 14px var(--glass-highlight)`,
+          // 写盘进行中:透明度脉冲指示,不阻塞交互
+          ...(isPending ? { opacity: [1, 0.55, 1] } : { opacity: 1 }),
+        }}
+        transition={isPending ? { opacity: { repeat: Infinity, duration: 1.2, ease: 'easeInOut' }, boxShadow: springBouncy } : springBouncy}
         style={{
           width: planetRadius * 2, height: planetRadius * 2,
           background: 'var(--planet-bg)', backdropFilter: 'blur(18px) saturate(1.3)',
@@ -136,7 +140,7 @@ export function ProjectPlanet({ data }: NodeProps<ProjectPlanetData>) {
             {parts.map((p, i) => (
               <span key={p.kind} style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                 {i > 0 && <span style={{ opacity: .5 }}>·</span>}
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: TYPE_COLORS[p.kind] ?? '#999', flexShrink: 0 }} />
+                <span style={{ width: 5, height: 5, borderRadius: '50%', background: KIND_COLOR[p.kind as keyof typeof KIND_COLOR] ?? '#999', flexShrink: 0 }} />
                 {p.label}
               </span>
             ))}
@@ -167,20 +171,22 @@ export function ProjectPlanet({ data }: NodeProps<ProjectPlanetData>) {
               animate={{ scale: 1, opacity: 1 }}
               transition={springBouncy}
               style={{ position: 'relative', display: 'inline-block', cursor: 'default' }}>
-              <div onClick={(e) => {
+              <button type="button" onClick={(e) => {
                 e.stopPropagation();
                 if (s.kind === 'bundle') data.onUnassignBundle?.(data.path, s.id);
                 else data.onUnassignMcp?.(data.path, s.id);
               }}
+                aria-label={`移除 ${s.label}`}
+                title={`移除 ${s.label}`}
                 style={{
                   position: 'absolute', top: -6, right: -6, width: 16, height: 16, borderRadius: '50%',
                   background: 'var(--bg-surface)', border: '1px solid var(--border)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 10, color: 'var(--text-muted)', cursor: 'pointer',
+                  fontSize: 10, color: 'var(--text-muted)', cursor: 'pointer', padding: 0,
                   opacity: 0, transition: 'opacity 0.2s ease', zIndex: 5,
                 }}
                 className="satellite-x"
-              >×</div>
+              >×</button>
               {s.kind === 'bundle' ? (
                 <div style={{
                   display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -190,7 +196,7 @@ export function ProjectPlanet({ data }: NodeProps<ProjectPlanetData>) {
                   border: '1px solid var(--bundle-accent)',
                   boxShadow: 'var(--glass-shadow)', color: 'var(--text-primary)',
                 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#9B6B9E', flexShrink: 0 }} />
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: KIND_COLOR.bundle, flexShrink: 0 }} />
                   {s.label}
                 </div>
               ) : (

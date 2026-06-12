@@ -61,6 +61,14 @@ describe('CRUD', () => {
     const next = deleteBundle(s, 'b1');
     expect(next.library.bundles['b1']).toBeUndefined();
   });
+  it('deleteBundle cascades: removes dangling refs from project assignments', () => {
+    let s = createBundle(fresh(), { id: 'b1', name: 'B1', version: '1.0', mcp: [], skills: [], plugins: [] });
+    s = assignBundle(s, '/proj', 'b1');
+    expect(s.assignments['/proj'].bundles).toEqual(['b1']);
+    const next = deleteBundle(s, 'b1');
+    expect(next.library.bundles['b1']).toBeUndefined();
+    expect(next.assignments['/proj'].bundles).toEqual([]);
+  });
 });
 
 describe('assignBundle / unassignBundle', () => {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
-import { springSmooth, springSnappy } from '../theme/springs';
+import { GlassModal } from '../theme/GlassModal';
+import { springSnappy } from '../theme/springs';
 
 interface EnvEditModalProps {
   mcpId: string;
@@ -8,38 +9,45 @@ interface EnvEditModalProps {
   onSaved: (desired: any) => void;
 }
 
+// 行的稳定身份——不能用 key 名(改名/重名会让显隐状态错乱)也不能用 index
+let nextUid = 0;
+
 export function EnvEditModal({ mcpId, onClose, onSaved }: EnvEditModalProps) {
-  const [pairs, setPairs] = useState<{ key: string; value: string }[]>([]);
-  const [visible, setVisible] = useState<Set<string>>(new Set());
+  const [pairs, setPairs] = useState<{ uid: number; key: string; value: string }[]>([]);
+  const [visible, setVisible] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    window.station.getMcpEnv(mcpId).then(data => {
-      if (data) {
-        setPairs(Object.entries(data.env).map(([k, v]) => ({ key: k, value: v })));
-      }
-      setLoading(false);
-    });
+    window.station.getMcpEnv(mcpId)
+      .then(data => {
+        if (data) {
+          setPairs(Object.entries(data.env).map(([k, v]) => ({ uid: nextUid++, key: k, value: v })));
+        }
+      })
+      .catch(e => setError(`加载失败: ${e instanceof Error ? e.message : String(e)}`))
+      .finally(() => setLoading(false));
   }, [mcpId]);
 
-  const toggleVisible = useCallback((key: string) => {
-    setVisible(prev => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; });
+  const toggleVisible = useCallback((uid: number) => {
+    setVisible(prev => { const next = new Set(prev); if (next.has(uid)) next.delete(uid); else next.add(uid); return next; });
   }, []);
 
-  const removeRow = useCallback((idx: number) => {
-    setPairs(prev => prev.filter((_, i) => i !== idx));
+  const removeRow = useCallback((uid: number) => {
+    setPairs(prev => prev.filter(p => p.uid !== uid));
   }, []);
 
   const addRow = useCallback(() => {
-    setPairs(prev => [...prev, { key: '', value: '' }]);
+    setPairs(prev => [...prev, { uid: nextUid++, key: '', value: '' }]);
   }, []);
 
-  const handleKeyChange = useCallback((idx: number, key: string) => {
-    setPairs(prev => prev.map((p, i) => i === idx ? { ...p, key } : p));
+  const handleKeyChange = useCallback((uid: number, key: string) => {
+    setPairs(prev => prev.map(p => p.uid === uid ? { ...p, key } : p));
   }, []);
 
-  const handleValueChange = useCallback((idx: number, value: string) => {
-    setPairs(prev => prev.map((p, i) => i === idx ? { ...p, value } : p));
+  const handleValueChange = useCallback((uid: number, value: string) => {
+    setPairs(prev => prev.map(p => p.uid === uid ? { ...p, value } : p));
   }, []);
 
   const handleSave = useCallback(async () => {
@@ -47,33 +55,21 @@ export function EnvEditModal({ mcpId, onClose, onSaved }: EnvEditModalProps) {
     for (const { key, value } of pairs) {
       if (key.trim()) env[key.trim()] = value;
     }
-    const next = await window.station.updateMcpEnv(mcpId, env);
-    onSaved(next);
-    onClose();
+    setSaving(true); setError(null);
+    try {
+      const next = await window.station.updateMcpEnv(mcpId, env);
+      onSaved(next);
+      onClose();
+    } catch (e) {
+      // 失败时弹窗保持打开,密钥编辑不能静默丢失
+      setError(`保存失败: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSaving(false);
+    }
   }, [mcpId, pairs, onSaved, onClose]);
 
   return (
-    <motion.div
-      onClick={onClose}
-      initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
-      animate={{ opacity: 1, backdropFilter: 'blur(8px)' }}
-      exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
-      transition={{ duration: 0.2, ease: 'easeOut' }}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(40,36,33,.28)', display: 'grid', placeItems: 'center', zIndex: 70 }}
-    >
-      <motion.div
-        onClick={e => e.stopPropagation()}
-        initial={{ scale: 0.92, opacity: 0, y: 8 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.96, opacity: 0, y: 4 }}
-        transition={springSmooth}
-        style={{
-          width: 500, maxHeight: '70vh', display: 'flex', flexDirection: 'column',
-          background: 'var(--glass-surface-strong)', backdropFilter: 'blur(20px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(20px) saturate(180%)', border: '1px solid var(--glass-border)',
-          borderRadius: 18, padding: 20, boxShadow: 'var(--glass-shadow)',
-        }}
-      >
+    <GlassModal width={500} maxHeight="70vh" column top onClose={onClose} ariaLabel={`环境变量 ${mcpId}`}>
         <h2 className="serif" style={{ marginTop: 0, fontSize: 18, marginBottom: 4 }}>
           环境变量 · <span style={{ fontFamily: 'var(--font-mono)', fontSize: 14 }}>{mcpId}</span>
         </h2>
@@ -83,19 +79,22 @@ export function EnvEditModal({ mcpId, onClose, onSaved }: EnvEditModalProps) {
 
         {loading && <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>加载中…</p>}
 
-        {!loading && pairs.length === 0 && (
+        {error && <p style={{ color: 'var(--state-drift)', fontSize: 12 }}>{error}</p>}
+
+        {!loading && !error && pairs.length === 0 && (
           <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>暂无环境变量。点击下方按钮添加。</p>
         )}
 
         <div style={{ overflowY: 'auto', flex: 1, marginRight: -4, paddingRight: 4 }}>
-          {pairs.map((pair, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+          {pairs.map(pair => (
+            <div key={pair.uid} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
               {/* Key name input */}
               <input
                 value={pair.key}
-                onChange={e => handleKeyChange(i, e.target.value)}
+                onChange={e => handleKeyChange(pair.uid, e.target.value)}
                 placeholder="变量名"
                 spellCheck={false}
+                autoComplete="off"
                 style={{
                   width: 160, padding: '6px 10px', borderRadius: 8,
                   border: '1px solid var(--border)', background: 'var(--bg-canvas)',
@@ -106,10 +105,11 @@ export function EnvEditModal({ mcpId, onClose, onSaved }: EnvEditModalProps) {
               {/* Value input (masked or not) */}
               <input
                 value={pair.value}
-                onChange={e => handleValueChange(i, e.target.value)}
-                type={visible.has(pair.key || String(i)) ? 'text' : 'password'}
+                onChange={e => handleValueChange(pair.uid, e.target.value)}
+                type={visible.has(pair.uid) ? 'text' : 'password'}
                 placeholder="值"
                 spellCheck={false}
+                autoComplete="off"
                 style={{
                   flex: 1, padding: '6px 10px', borderRadius: 8,
                   border: '1px solid var(--border)', background: 'var(--bg-canvas)',
@@ -118,23 +118,23 @@ export function EnvEditModal({ mcpId, onClose, onSaved }: EnvEditModalProps) {
                 }}
               />
               {/* Toggle visibility */}
-              <span
-                onClick={() => toggleVisible(pair.key || String(i))}
-                title={visible.has(pair.key || String(i)) ? '隐藏' : '显示'}
-                style={{
-                  cursor: 'pointer', fontSize: 14, userSelect: 'none', opacity: 0.6,
-                  width: 24, textAlign: 'center',
-                }}
-              >{visible.has(pair.key || String(i)) ? '🙈' : '👁'}</span>
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => toggleVisible(pair.uid)}
+                title={visible.has(pair.uid) ? '隐藏' : '显示'}
+                aria-label={visible.has(pair.uid) ? `隐藏 ${pair.key || '该值'}` : `显示 ${pair.key || '该值'}`}
+                style={{ fontSize: 14, opacity: 0.6, width: 24, textAlign: 'center' }}
+              >{visible.has(pair.uid) ? '🙈' : '👁'}</button>
               {/* Remove row */}
-              <span
-                onClick={() => removeRow(i)}
+              <button
+                type="button"
+                className="icon-btn"
+                onClick={() => removeRow(pair.uid)}
                 title="移除"
-                style={{
-                  cursor: 'pointer', fontSize: 16, color: 'var(--text-muted)', opacity: 0.5,
-                  width: 20, textAlign: 'center', userSelect: 'none',
-                }}
-              >×</span>
+                aria-label={`移除 ${pair.key || '空行'}`}
+                style={{ fontSize: 16, color: 'var(--text-muted)', opacity: 0.5, width: 20, textAlign: 'center' }}
+              >×</button>
             </div>
           ))}
         </div>
@@ -163,16 +163,17 @@ export function EnvEditModal({ mcpId, onClose, onSaved }: EnvEditModalProps) {
             >取消</motion.button>
             <motion.button
               onClick={handleSave}
+              disabled={saving}
               whileTap={{ scale: 0.96 }}
               transition={springSnappy}
               style={{
                 padding: '6px 14px', borderRadius: 10, border: 'none',
-                background: 'var(--accent)', color: '#fff', cursor: 'pointer',
+                background: 'var(--accent)', color: '#fff',
+                cursor: saving ? 'default' : 'pointer', opacity: saving ? .6 : 1,
               }}
-            >保存</motion.button>
+            >{saving ? '保存中…' : '保存'}</motion.button>
           </div>
         </div>
-      </motion.div>
-    </motion.div>
+    </GlassModal>
   );
 }

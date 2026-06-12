@@ -2,18 +2,15 @@ import React, { useMemo, useEffect, useState, useCallback } from 'react';
 import ReactFlow, { Background, BackgroundVariant, Controls, useNodesState } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { ProjectPlanet } from './ProjectPlanet';
+import { AddPlaceholder } from './AddPlaceholder';
 import { computeOrbitLayout } from './orbitLayout';
+import { ContextMenu } from '../components/ContextMenu';
+import { STR } from '../i18n/strings';
 import type { ProjectState } from '../../main/types';
 import type { LibraryMcp, LibrarySkill, LibraryPlugin, LibrarySnippet, LibraryBundle } from '../../main/station/types';
 import type { McpStatus } from './McpSatellite';
 
-const nodeTypes = { planet: ProjectPlanet };
-
-function statusOf(mcpId: string, project: ProjectState, assignedIds: string[], landedIds: Set<string>): McpStatus {
-  if (!assignedIds.includes(mcpId)) return 'global';
-  if (landedIds.has(mcpId)) return 'applied';
-  return 'pending';
-}
+const nodeTypes = { planet: ProjectPlanet, placeholder: AddPlaceholder };
 
 export interface DragItem { kind: string; id: string; }
 
@@ -32,7 +29,7 @@ export interface GlobalSnapshot {
   bundles: LibraryBundle[];
 }
 
-export function Canvas({ projects, desiredMcp, desiredSkills, desiredPlugins, desiredSnippets, desiredBundles, lastApplied, onSelect, onDropItem, onUnassignMcp, onUnassignBundle, draggingItem, pendingAssignments, globalSnapshot, onDropGlobal, onUnassignGlobalMcp, onUnassignGlobalSkill, onUnassignGlobalPlugin, onUnassignGlobalBundle, onAddProject, onDeleteProject }: {
+export function Canvas({ projects, desiredMcp, desiredSkills, desiredPlugins, desiredSnippets, desiredBundles, lastApplied, onSelect, onDropItem, onUnassignMcp, onUnassignBundle, draggingItem, pendingAssignments, globalSnapshot, onDropGlobal, onUnassignGlobalMcp, onUnassignGlobalSkill, onUnassignGlobalPlugin, onUnassignGlobalBundle, onAddProject, onDeleteProject, pendingPaths }: {
   projects: ProjectState[];
   desiredMcp: Record<string, LibraryMcp>;
   desiredSkills: Record<string, LibrarySkill>;
@@ -54,6 +51,8 @@ export function Canvas({ projects, desiredMcp, desiredSkills, desiredPlugins, de
   onUnassignGlobalBundle?: (bundleId: string) => void;
   onAddProject?: () => void;
   onDeleteProject?: (path: string, name: string) => void;
+  // 拖拽即应用进行中的项目路径——对应星球脉冲指示
+  pendingPaths?: Set<string>;
 }) {
   // Layout: projects + synthetic Global node
   const layout = useMemo(() => {
@@ -73,7 +72,7 @@ export function Canvas({ projects, desiredMcp, desiredSkills, desiredPlugins, de
 
   const computedNodes = useMemo(() => {
     const assignments = pendingAssignments ?? {};
-    return layout.map(l => {
+    const nodes: any[] = layout.map(l => {
     if (l.path === '__global__') {
       // Synthetic global planet
       return {
@@ -111,7 +110,8 @@ export function Canvas({ projects, desiredMcp, desiredSkills, desiredPlugins, de
 
     const inferredMcp = p.mcp.map(m => m.id);
     const pendingMcp = a.mcp.filter(id => !inferredMcp.includes(id));
-    const allMCP = [...p.mcp.map(m => ({ id: m.id, hasSecrets: m.hasSecrets, status: statusOf(m.id, p, a.mcp, new Set()) })), ...pendingMcp.map(id => ({ id, hasSecrets: desiredMcp[id]?.hasSecrets ?? false, status: 'pending' as McpStatus }))];
+    // status 统一在下方 mcpWithStatus 计算(依赖 landedIds),此处只收集 id/hasSecrets
+    const allMCP = [...p.mcp.map(m => ({ id: m.id, hasSecrets: m.hasSecrets })), ...pendingMcp.map(id => ({ id, hasSecrets: desiredMcp[id]?.hasSecrets ?? false }))];
 
     const applied = lastApplied[l.path];
     const landedIds = new Set<string>([...Object.keys(applied?.mcpJson ?? {}), ...Object.keys(applied?.localScope ?? {})]);
@@ -142,9 +142,24 @@ export function Canvas({ projects, desiredMcp, desiredSkills, desiredPlugins, de
     return { id: l.path, type: 'planet' as const, position: { x: l.x - l.safeRadius, y: l.y - l.safeRadius },
       data: { ...l, name: l.path.split('/').pop() || l.path, mcp: mcpWithStatus, skills: allSkills, plugins: allPlugins, snippets: allSnippets, bundles: assignedBundles,
         libraryMcp: desiredMcp, librarySkills: desiredSkills, libraryPlugins: desiredPlugins, librarySnippets: desiredSnippets,
-        draggingItem, isDragOver: draggingItem !== null, onDropItem, onUnassignMcp, onUnassignBundle, onSelect: () => onSelect(p) },
+        draggingItem, isDragOver: draggingItem !== null, isPending: pendingPaths?.has(l.path) ?? false, onDropItem, onUnassignMcp, onUnassignBundle, onSelect: () => onSelect(p) },
     };
-  })}, [layout, projects, lastApplied, desiredMcp, desiredSkills, desiredPlugins, desiredSnippets, desiredBundles, pendingAssignments, globalSnapshot, draggingItem, onDropItem, onUnassignMcp, onUnassignBundle, onSelect, onDropGlobal, onUnassignGlobalMcp, onUnassignGlobalSkill, onUnassignGlobalPlugin, onUnassignGlobalBundle]);
+  });
+    // 零项目空态:在 Global 旁放一个「添加第一个项目」占位节点引导新用户
+    if (projects.length === 0) {
+      const g = layout.find(l => l.path === '__global__');
+      if (g) {
+        nodes.push({
+          id: '__add_placeholder__',
+          type: 'placeholder' as const,
+          position: { x: g.x + g.safeRadius * 2.5, y: g.y - 60 },
+          selectable: false,
+          data: { onAddProject },
+        });
+      }
+    }
+    return nodes;
+  }, [layout, projects, lastApplied, desiredMcp, desiredSkills, desiredPlugins, desiredSnippets, desiredBundles, pendingAssignments, globalSnapshot, draggingItem, pendingPaths, onDropItem, onUnassignMcp, onUnassignBundle, onSelect, onDropGlobal, onUnassignGlobalMcp, onUnassignGlobalSkill, onUnassignGlobalPlugin, onUnassignGlobalBundle, onAddProject]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(computedNodes);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; planetPath?: string; planetName?: string; isGlobal?: boolean } | null>(null);
@@ -161,7 +176,7 @@ export function Canvas({ projects, desiredMcp, desiredSkills, desiredPlugins, de
     setCtxMenu({ x: e.clientX, y: e.clientY, planetPath: node.data?.path, planetName: name, isGlobal });
   }, []);
 
-  useEffect(() => { const close = () => setCtxMenu(null); document.addEventListener('click', close); return () => document.removeEventListener('click', close); }, []);
+  // 关闭逻辑(Escape / 点击外部)由 ContextMenu 组件自理
 
   useEffect(() => { setNodes(current => { const prevById = new Map(current.map(n => [n.id, n])); return computedNodes.map(c => { const prev = prevById.get(c.id); return prev ? { ...c, position: prev.position } : c; }); }); }, [computedNodes, setNodes]);
 
@@ -174,17 +189,16 @@ export function Canvas({ projects, desiredMcp, desiredSkills, desiredPlugins, de
         <Controls />
       </ReactFlow>
       {ctxMenu && (
-        <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', left: ctxMenu.x, top: ctxMenu.y, zIndex: 100, background: 'var(--glass-surface-strong)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', border: '1px solid var(--glass-border)', borderRadius: 14, padding: 8, boxShadow: 'var(--glass-shadow)', minWidth: 180 }}>
-          {ctxMenu.planetPath && !ctxMenu.isGlobal ? (
-            <><div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '4px 10px', marginBottom: 4 }}>{ctxMenu.planetName}</div>
-              <button onClick={() => { onDeleteProject?.(ctxMenu.planetPath!, ctxMenu.planetName!); setCtxMenu(null); }} style={ctxBtnStyle}>🔌 删除项目…</button></>
-          ) : (
-            <button onClick={() => { onAddProject?.(); setCtxMenu(null); }} style={ctxBtnStyle}>🆕 添加项目</button>
-          )}
-        </div>
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          header={ctxMenu.planetPath && !ctxMenu.isGlobal ? ctxMenu.planetName : undefined}
+          items={ctxMenu.planetPath && !ctxMenu.isGlobal
+            ? [{ label: STR.canvas.menuDeleteProject, danger: true, onClick: () => onDeleteProject?.(ctxMenu.planetPath!, ctxMenu.planetName!) }]
+            : [{ label: STR.canvas.menuAddProject, onClick: () => onAddProject?.() }]}
+          onClose={() => setCtxMenu(null)}
+        />
       )}
     </div>
   );
 }
-
-const ctxBtnStyle: React.CSSProperties = { display: 'block', width: '100%', padding: '6px 10px', border: 'none', borderRadius: 8, background: 'transparent', color: 'var(--text-primary)', cursor: 'pointer', fontSize: 12, textAlign: 'left' as const };

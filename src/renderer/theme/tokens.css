@@ -24,6 +24,15 @@
   --orbit-line-active: rgba(217,119,87,.48);
   --gravity-glow: rgba(217,119,87,.18);
   --bundle-accent: #9B6B9E;
+  /* 能力种类色 —— 组件经 theme/kinds.ts 引用,绝不写死 hex */
+  --kind-mcp: #D97757;
+  --kind-skill: #5B7553;
+  --kind-plugin: #C2965A;
+  --kind-snippet: #7B8DB5;
+  --kind-bundle: var(--bundle-accent);
+  --overlay: rgba(40,36,33,.28);
+  --z-modal: 60;
+  --z-modal-top: 70;
 }
 
 [data-theme="dark"] {
@@ -49,6 +58,12 @@
   --orbit-line-active: rgba(224,138,107,.56);
   --gravity-glow: rgba(224,138,107,.14);
   --bundle-accent: #B88CBB;
+  /* 深色主题提亮种类色,保证文本/色点对比度 */
+  --kind-mcp: #E08A6B;
+  --kind-skill: #7E9C76;
+  --kind-plugin: #D9AE6E;
+  --kind-snippet: #93A4C9;
+  --overlay: rgba(0,0,0,.42);
 }
 
 * { box-sizing: border-box; }
@@ -59,6 +74,17 @@ body {
   background: var(--bg-canvas);
 }
 h1, h2, h3, .serif { font-family: var(--font-serif); }
+
+/* 可点击元素的键盘可达性:icon button 重置 + focus 外圈 */
+button.icon-btn {
+  background: none; border: 0; padding: 0; margin: 0;
+  font: inherit; color: inherit; cursor: pointer;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 
 /* 卫星悬停：× 按钮淡入(着陆动画已迁移到 motion spring) */
 .satellite-x:hover { opacity: 1 !important; }

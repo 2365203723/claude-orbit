@@ -1,6 +1,17 @@
 import { app, BrowserWindow } from 'electron';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 import { registerIpc } from './ipc';
+import { sweepStaleTempFiles } from './station/safeJson';
+import { orbitPaths } from './station/paths';
+
+/** 启动时清理上次崩溃写入遗留的 *.orbit-tmp,避免半成品文件干扰目录扫描 */
+function sweepTempFiles(): void {
+  const home = homedir();
+  sweepStaleTempFiles(home);                          // ~/.claude.json.orbit-tmp
+  sweepStaleTempFiles(join(home, '.claude'));         // settings.json / skills 等
+  sweepStaleTempFiles(orbitPaths(home).orbitDir);     // state.json
+}
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -19,6 +30,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  sweepTempFiles();
   registerIpc();
   createWindow();
   app.on('activate', () => {

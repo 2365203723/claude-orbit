@@ -7,4 +7,4 @@ out/
 .obsidian/
 graphify-out/
 release/
-node_modules/
+.DS_Store

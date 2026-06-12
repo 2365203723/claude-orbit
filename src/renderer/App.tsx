@@ -7,65 +7,139 @@ import { LibraryRail } from './rail/LibraryRail';
 import { ConfirmModal } from './apply/ConfirmModal';
 import { EnvEditModal } from './rail/EnvEditModal';
 import { AddProjectModal } from './rail/AddProjectModal';
+import { BundleEditorModal } from './rail/BundleEditorModal';
+import { GlassModal } from './theme/GlassModal';
+import { STR } from './i18n/strings';
 import type { ProjectState } from '../main/types';
-import type { StationState } from '../main/station/types';
+import type { StationState, LibraryBundle } from '../main/station/types';
+import { formatIpcError } from './ipcError';
 
 function emptyGlobal(): GlobalSnapshot { return { mcp: [], skills: [], plugins: [], bundles: [] }; }
+
+type ThemePref = 'light' | 'dark' | 'auto';
+const THEME_KEY = 'orbit-theme';
+const THEME_LABEL: Record<ThemePref, string> = { light: '☀️ 浅色', dark: '🌙 深色', auto: '🌗 跟随系统' };
 
 export function App() {
   const [desired, setDesired] = useState<StationState | null>(null);
   const [projects, setProjects] = useState<ProjectState[]>([]);
+  const [skillHealth, setSkillHealth] = useState<{ dead: string[] } | null>(null);
+  const [driftedPaths, setDriftedPaths] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<ProjectState | null>(null);
   const [globalSelected, setGlobalSelected] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [themePref, setThemePref] = useState<ThemePref>(() => {
+    const saved = localStorage.getItem(THEME_KEY);
+    return saved === 'light' || saved === 'dark' || saved === 'auto' ? saved : 'auto';
+  });
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
+  // 移除全局 MCP 可能带走 ~/.claude.json 里的密钥配置——经确认弹窗后才执行
   const [retireId, setRetireId] = useState<string | null>(null);
   const [draggingItem, setDraggingItem] = useState<DragItem | null>(null);
   const [editingMcpId, setEditingMcpId] = useState<string | null>(null);
   const [addingProject, setAddingProject] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ path: string; name: string } | null>(null);
+  // 删除文件夹的二段确认:首次点击进入 armed,3 秒未再点自动回退
+  const [deleteArmed, setDeleteArmed] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [globalSnapshot, setGlobalSnapshot] = useState<GlobalSnapshot>(emptyGlobal);
+  const [ipcError, setIpcError] = useState<string | null>(null);
+  // 首次扫描完成前显示骨架屏——扫描慢时(大量项目/网络盘)不能看起来像数据丢失
+  const [booted, setBooted] = useState(false);
+  // 拖拽即应用进行中的项目路径——对应星球做脉冲指示,不做全屏 spinner
+  const [pendingPaths, setPendingPaths] = useState<Set<string>>(new Set());
 
-  const [globalBundleIds, setGlobalBundleIds] = useState<string[]>([]);
+  const [editingBundle, setEditingBundle] = useState<LibraryBundle | null>(null); // null = 关闭; undefined 作新建
+  const [bundleEditorOpen, setBundleEditorOpen] = useState(false);
   const desiredRef = useRef<StationState | null>(null);
   desiredRef.current = desired;
   const projectsRef = useRef<ProjectState[]>([]);
   projectsRef.current = projects;
 
   const reloadGlobalRef = useRef<() => Promise<void>>(async () => {});
+  // 过期响应防护:并发 reload 时只接受最后一次发起的结果
+  const reloadSeqRef = useRef(0);
+  const reloadGlobalSeqRef = useRef(0);
+
+  // 错误 toast 自动消隐
+  useEffect(() => {
+    if (!ipcError) return;
+    const t = setTimeout(() => setIpcError(null), 6000);
+    return () => clearTimeout(t);
+  }, [ipcError]);
+  // 安全网:漏网的 unhandled rejection 也走同一 toast
+  useEffect(() => {
+    const handler = (e: PromiseRejectionEvent) => setIpcError(formatIpcError(e.reason));
+    window.addEventListener('unhandledrejection', handler);
+    return () => window.removeEventListener('unhandledrejection', handler);
+  }, []);
 
   const reloadGlobal = useCallback(async () => {
+    const seq = ++reloadGlobalSeqRef.current;
     const gs = await window.station.getGlobalSnapshot();
-    const desiredNow = desiredRef.current;
-    const lib = desiredNow?.library.bundles ?? {};
-    setGlobalBundleIds(prev => {
-      const keep = prev.filter(bid => {
-        const b = lib[bid];
-        return b && b.mcp.every(mid => gs.mcp.some(m => m.id === mid));
-      });
-      return keep.length === prev.length && keep.every((v, i) => v === prev[i]) ? prev : keep;
-    });
+    if (seq !== reloadGlobalSeqRef.current) return; // 已有更新的请求在途,丢弃旧快照
+    const lib = desiredRef.current?.library.bundles ?? {};
     setGlobalSnapshot({
       mcp: gs.mcp.map(m => ({ id: m.id, hasSecrets: m.hasSecrets })),
       skills: gs.skills.map(s => s.id),
       plugins: gs.plugins.filter(p => p.enabled).map(p => p.id),
-      bundles: Object.values(desiredNow?.library.bundles ?? {}).filter((b: any) =>
-        b.mcp.length > 0 && b.mcp.every((mid: string) => gs.mcp.some(m => m.id === mid))
-      ) as any[],
+      // 只显示显式分配的 bundle——绝不从「MCP 全在全局」推断,手动添加会误报
+      bundles: gs.bundleIds.map(id => lib[id]).filter((b): b is LibraryBundle => !!b),
     });
   }, []); // 不依赖 desired —— 用 ref 读取最新值
   reloadGlobalRef.current = reloadGlobal;
 
   const reload = useCallback(async () => {
-    const [inferred, d] = await Promise.all([window.station.getState(), window.station.loadDesired()]);
-    setProjects(inferred.projects);
-    setDesired(d);
-    // 选中的项目对象是按引用持有的旧快照——重新指向磁盘扫描后的新对象,
-    // 否则右侧详情面板在 apply / 增删项目后仍显示陈旧的 applied/pending 状态
-    setSelected(prev => prev ? (inferred.projects.find(p => p.path === prev.path) ?? null) : null);
-    await reloadGlobalRef.current();
+    const seq = ++reloadSeqRef.current;
+    try {
+      // 聚合通道:主进程一次磁盘扫描同时产出 inferred 与 desired
+      const { inferred, desired: d } = await window.station.reload();
+      if (seq !== reloadSeqRef.current) return; // 过期响应,丢弃
+      setProjects(inferred.projects);
+      setDesired(d);
+      // 选中的项目对象是按引用持有的旧快照——重新指向磁盘扫描后的新对象,
+      // 否则右侧详情面板在 apply / 增删项目后仍显示陈旧的 applied/pending 状态
+      setSelected(prev => prev ? (inferred.projects.find(p => p.path === prev.path) ?? null) : null);
+      // 后台扫描 skill 源健康 + 漂移(不阻塞主界面)
+      window.station.scanSkillHealth().then(h => setSkillHealth(h)).catch(() => {});
+      window.station.checkDrift().then(r => {
+        if (r && !Array.isArray(r)) setDriftedPaths(new Set((r as { drifted: string[] }).drifted));
+      }).catch(() => {});
+      await reloadGlobalRef.current();
+    } finally {
+      setBooted(true); // 首扫结束(无论成败)即退出骨架屏;后续 reload 无感
+    }
   }, []); // 用 ref 打破循环依赖
-  useEffect(() => { reload(); }, [reload]);
+
+  // 统一错误通道:IPC 失败时提示 + 强制 reload 让 UI 与真实磁盘状态对齐
+  const guard = useCallback(async (fn: () => Promise<unknown>, recover?: () => Promise<void>) => {
+    try {
+      await fn();
+    } catch (e) {
+      setIpcError(formatIpcError(e));
+      try { await (recover ?? reload)(); } catch { /* 重扫也失败时不再叠加提示 */ }
+    }
+  }, [reload]);
+
+  useEffect(() => { guard(reload); }, [reload, guard]);
+
+  // 主题:localStorage 持久化偏好,auto 时跟随系统外观(Chromium 自动映射 macOS)
+  useEffect(() => {
+    if (themePref !== 'auto') return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    mq.addEventListener('change', handler);
+    setSystemDark(mq.matches);
+    return () => mq.removeEventListener('change', handler);
+  }, [themePref]);
+  const theme: 'light' | 'dark' = themePref === 'auto' ? (systemDark ? 'dark' : 'light') : themePref;
   useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
+  const cycleTheme = useCallback(() => {
+    setThemePref(prev => {
+      const next: ThemePref = prev === 'light' ? 'dark' : prev === 'dark' ? 'auto' : 'light';
+      localStorage.setItem(THEME_KEY, next);
+      return next;
+    });
+  }, []);
 
   // Global dragover handler
   useEffect(() => {
@@ -84,34 +158,45 @@ export function App() {
     return () => document.removeEventListener('dragover', handler);
   }, []);
 
+  // 拖拽即应用进行中标记:对应星球脉冲,写盘完成后移除
+  const markPending = useCallback(async (path: string, fn: () => Promise<void>) => {
+    setPendingPaths(prev => new Set(prev).add(path));
+    try {
+      await fn();
+    } finally {
+      setPendingPaths(prev => { const next = new Set(prev); next.delete(path); return next; });
+    }
+  }, []);
+
   // === Project drag handlers ===
   // 拖拽即应用:主进程在 assign 后立即写盘,这里 reload 重扫真实配置,
   // 让卫星直接显示为"已应用"(绿),无需再点 Apply。
-  const onDropItem = useCallback(async (path: string, kind: string, id: string) => {
+  const onDropItem = useCallback((path: string, kind: string, id: string) => guard(() => markPending(path, async () => {
     if (kind === 'bundle') await window.station.assignBundle(path, id);
     else if (kind === 'mcp') await window.station.assign(path, id);
     else if (kind === 'skill') await window.station.assignSkill(path, id);
     else if (kind === 'plugin') await window.station.assignPlugin(path, id);
     else if (kind === 'snippet') await window.station.assignSnippet(path, id);
     await reload();
-  }, [reload]);
-  const onUnassignMcp = useCallback(async (path: string, mcpId: string) => { await window.station.unassign(path, mcpId); await reload(); }, [reload]);
-  const onUnassignBundle = useCallback(async (path: string, bundleId: string) => { await window.station.unassignBundle(path, bundleId); await reload(); }, [reload]);
-  const onUnassignItem = useCallback(async (kind: string, id: string) => {
+  })), [guard, reload, markPending]);
+  const onUnassignMcp = useCallback((path: string, mcpId: string) => guard(() => markPending(path, async () => { await window.station.unassign(path, mcpId); await reload(); })), [guard, reload, markPending]);
+  const onUnassignBundle = useCallback((path: string, bundleId: string) => guard(() => markPending(path, async () => { await window.station.unassignBundle(path, bundleId); await reload(); })), [guard, reload, markPending]);
+  const onUnassignItem = useCallback((kind: string, id: string) => guard(async () => {
     if (!selected) return;
     const path = selected.path;
-    if (kind === 'mcp') await window.station.unassign(path, id);
-    else if (kind === 'skill') await window.station.unassignSkill(path, id);
-    else if (kind === 'plugin') await window.station.unassignPlugin(path, id);
-    else if (kind === 'snippet') await window.station.unassignSnippet(path, id);
-    await reload();
-  }, [selected, reload]);
+    await markPending(path, async () => {
+      if (kind === 'mcp') await window.station.unassign(path, id);
+      else if (kind === 'skill') await window.station.unassignSkill(path, id);
+      else if (kind === 'plugin') await window.station.unassignPlugin(path, id);
+      else if (kind === 'snippet') await window.station.unassignSnippet(path, id);
+      await reload();
+    });
+  }), [selected, guard, reload, markPending]);
 
   // === Global drag handlers (direct disk write) ===
-  const onDropGlobal = useCallback(async (kind: string, id: string) => {
+  const onDropGlobal = useCallback((kind: string, id: string) => guard(async () => {
     if (kind === 'bundle') {
       await window.station.assignGlobalBundle(id);
-      setGlobalBundleIds(prev => prev.includes(id) ? prev : [...prev, id]);
     } else if (kind === 'mcp') {
       const entry = desired?.library.mcp[id];
       if (entry) await window.station.addGlobalMcp(id, entry.def);
@@ -121,53 +206,127 @@ export function App() {
     } else if (kind === 'plugin') {
       await window.station.addGlobalPlugin(id);
     }
-    await reloadGlobal();
-  }, [desired, reloadGlobal]);
-  const onUnassignGlobalMcp = useCallback(async (mcpId: string) => { await window.station.removeGlobalMcp(mcpId); await reloadGlobal(); }, [reloadGlobal]);
-  const onUnassignGlobalSkill = useCallback(async (skillId: string) => { await window.station.removeGlobalSkill(skillId); await reloadGlobal(); }, [reloadGlobal]);
-  const onUnassignGlobalPlugin = useCallback(async (pluginId: string) => { await window.station.removeGlobalPlugin(pluginId); await reloadGlobal(); }, [reloadGlobal]);
-  const onUnassignGlobalBundle = useCallback(async (bundleId: string) => {
+    await reload(); // bundle 分配会更新 state.json 的 globalBundles,需要新 desired
+  }, reloadGlobal), [desired, guard, reload, reloadGlobal]);
+  // 移除全局 MCP 可能带走 ~/.claude.json 里的密钥配置——走确认弹窗
+  const onUnassignGlobalMcp = useCallback((mcpId: string) => { setRetireId(mcpId); }, []);
+  const onUnassignGlobalSkill = useCallback((skillId: string) => guard(async () => { await window.station.removeGlobalSkill(skillId); await reloadGlobal(); }, reloadGlobal), [guard, reloadGlobal]);
+  const onUnassignGlobalPlugin = useCallback((pluginId: string) => guard(async () => { await window.station.removeGlobalPlugin(pluginId); await reloadGlobal(); }, reloadGlobal), [guard, reloadGlobal]);
+  const onUnassignGlobalBundle = useCallback((bundleId: string) => guard(async () => {
     await window.station.unassignGlobalBundle(bundleId);
-    setGlobalBundleIds(prev => prev.filter(id => id !== bundleId));
-    await reloadGlobal();
-  }, [reloadGlobal]);
+    await reload();
+  }, reloadGlobal), [guard, reload, reloadGlobal]);
 
-  const confirmRetire = async () => {
-    if (retireId) { await window.station.removeGlobalMcp(retireId); setRetireId(null); await reloadGlobal(); }
-  };
-  const confirmDeleteUnmount = async () => {
+  const confirmRetire = useCallback(async () => {
+    if (!retireId) return;
+    try {
+      await guard(async () => { await window.station.removeGlobalMcp(retireId); await reloadGlobal(); }, reloadGlobal);
+    } finally {
+      setRetireId(null); // 无论成败都关闭弹窗,错误经 toast 提示
+    }
+  }, [retireId, guard, reloadGlobal]);
+  const confirmDeleteUnmount = useCallback(async () => {
     if (!deleteTarget) return;
-    await window.station.unmountProject(deleteTarget.path);
-    setDeleteTarget(null);
-    await reload();
-  };
-  const confirmDeleteFolder = async () => {
-    if (!deleteTarget) return;
-    await window.station.unmountProject(deleteTarget.path);
-    await window.station.deleteProjectFolder(deleteTarget.path);
-    setDeleteTarget(null);
-    await reload();
-  };
+    try {
+      await guard(async () => { await window.station.unmountProject(deleteTarget.path); await reload(); });
+    } finally {
+      setDeleteTarget(null);
+    }
+  }, [deleteTarget, guard, reload]);
+  // armed 状态 3 秒自动回退
+  useEffect(() => {
+    if (!deleteArmed) return;
+    const t = setTimeout(() => setDeleteArmed(false), 3000);
+    return () => clearTimeout(t);
+  }, [deleteArmed]);
+  useEffect(() => { if (!deleteTarget) { setDeleteArmed(false); setDeleteBusy(false); } }, [deleteTarget]);
+  const confirmDeleteFolder = useCallback(async () => {
+    if (!deleteTarget || deleteBusy) return;
+    // 移入废纸篓不可静默:首次点击仅 arm,二次点击才执行
+    if (!deleteArmed) { setDeleteArmed(true); return; }
+    setDeleteBusy(true);
+    try {
+      // 主进程走 shell.trashItem(可从废纸篓恢复)+ 路径白名单校验。
+      // 失败时弹窗保持打开,错误经 toast 提示
+      const res = await window.station.deleteProjectFolder(deleteTarget.path);
+      if (!res.ok) {
+        setIpcError(`移入废纸篓失败${res.error ? `: ${res.error}` : ''}`);
+        return;
+      }
+      await guard(async () => { await reload(); });
+      setDeleteTarget(null);
+    } catch (e) {
+      setIpcError(formatIpcError(e));
+    } finally {
+      setDeleteBusy(false);
+      setDeleteArmed(false);
+    }
+  }, [deleteTarget, deleteArmed, deleteBusy, guard, reload]);
 
   const lib = desired?.library;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <header style={{ height: 44, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)', WebkitUserSelect: 'none' }}>
-        <span className="serif" style={{ fontWeight: 600 }}>Claude Orbit</span>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+      <header style={{ height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)', WebkitUserSelect: 'none', WebkitAppRegion: 'drag', position: 'relative' } as React.CSSProperties}>
+        <span className="serif" style={{ fontWeight: 600, WebkitAppRegion: 'drag' }}>Claude Orbit</span>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', position: 'absolute', right: 16, WebkitAppRegion: 'no-drag' }}>
           <motion.button whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 500, damping: 30, mass: 0.8 }}
             onClick={() => setAddingProject(true)}
-            style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 10px', background: 'var(--bg-canvas)', color: 'var(--text-primary)', cursor: 'pointer', fontSize: 12 }}>
+            style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 10px', background: 'var(--bg-canvas)', color: 'var(--text-primary)', cursor: 'pointer', fontSize: 12, WebkitAppRegion: 'no-drag' }}>
             + 添加项目
           </motion.button>
-          <button onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
-            style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 10px', background: 'var(--bg-canvas)', color: 'var(--text-primary)', cursor: 'pointer' }}>
-            {theme === 'light' ? '🌙 深色' : '☀️ 浅色'}
+          <button onClick={cycleTheme} title="切换主题:浅色 → 深色 → 跟随系统"
+            style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 10px', background: 'var(--bg-canvas)', color: 'var(--text-primary)', cursor: 'pointer', WebkitAppRegion: 'no-drag' }}>
+            {THEME_LABEL[themePref]}
           </button>
         </div>
       </header>
+      {/* IPC 错误 toast——写盘失败等必须可见,绝不静默 */}
+      <AnimatePresence>
+        {ipcError && (
+          <motion.div
+            initial={{ y: -12, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -12, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+            onClick={() => setIpcError(null)}
+            role="alert"
+            style={{
+              position: 'fixed', top: 52, left: '50%', transform: 'translateX(-50%)', zIndex: 90,
+              maxWidth: 520, padding: '8px 14px', borderRadius: 12, cursor: 'pointer',
+              background: 'var(--glass-surface-strong)', backdropFilter: 'blur(20px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+              border: '1px solid var(--state-drift)', color: 'var(--state-drift)',
+              boxShadow: 'var(--glass-shadow)', fontSize: 12,
+            }}>
+            ⚠️ {ipcError}
+          </motion.div>
+        )}
+      </AnimatePresence>
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        {!booted && desired === null ? (
+          /* 首次扫描骨架屏:rail 三段 shimmer + 画布中央呼吸圆,避免被误认为数据丢失 */
+          <>
+            <aside style={{ width: 200, background: 'var(--bg-rail)', borderRight: '1px solid var(--border)', padding: 16 }} aria-busy="true" aria-label="正在扫描配置">
+              {[0, 1, 2].map(i => (
+                <motion.div key={i}
+                  animate={{ opacity: [0.3, 0.7, 0.3] }}
+                  transition={{ repeat: Infinity, duration: 1.6, delay: i * 0.2 }}
+                  style={{ height: 52, borderRadius: 10, background: 'var(--glass-surface)', border: '1px solid var(--glass-border)', marginBottom: 14 }} />
+              ))}
+            </aside>
+            <div style={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+                <motion.div
+                  animate={{ opacity: [0.3, 0.7, 0.3] }}
+                  transition={{ repeat: Infinity, duration: 1.6 }}
+                  style={{ width: 96, height: 96, borderRadius: '50%', background: 'var(--planet-bg)', border: '1px solid var(--glass-border)', boxShadow: 'var(--glass-shadow)' }} />
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>正在扫描项目配置…</span>
+              </div>
+            </div>
+          </>
+        ) : (
+        <>
         <div style={{ display: 'flex', flexDirection: 'column', width: 200 }}>
           <LibraryRail
             mcp={lib ? Object.values(lib.mcp) : []}
@@ -178,6 +337,21 @@ export function App() {
             onDragStartItem={(kind, id) => setDraggingItem({ kind, id })}
             onDragEndItem={() => setDraggingItem(null)}
             onEditMcp={setEditingMcpId}
+            onCreateBundle={() => { setEditingBundle(null); setBundleEditorOpen(true); }}
+            onImportSkill={() => guard(async () => {
+              const dir = await window.station.browseFolder();
+              if (dir) { const next = await window.station.importSkill(dir); setDesired(next); }
+            })}
+            onImportAllSkills={() => guard(async () => {
+              const { state: next } = await window.station.importDiscoveredSkills();
+              setDesired(next);
+            })}
+            onEditBundle={(b) => { setEditingBundle(b); setBundleEditorOpen(true); }}
+            onDeleteBundle={(bid) => guard(async () => {
+              const next = await window.station.deleteBundle(bid);
+              setDesired(next);
+            })}
+            deadSkillIds={skillHealth ? new Set(skillHealth.dead) : undefined}
           />
         </div>
         <Canvas
@@ -202,6 +376,7 @@ export function App() {
           onUnassignGlobalBundle={onUnassignGlobalBundle}
           onAddProject={() => setAddingProject(true)}
           onDeleteProject={(path, name) => setDeleteTarget({ path, name })}
+          pendingPaths={pendingPaths}
         />
         <DetailPanel project={selected} assignments={selected ? desired?.assignments[selected.path] : undefined} desiredBundles={desired?.library.bundles ?? {}} desiredMcp={desired?.library.mcp ?? {}} onUnassign={onUnassignItem} onUnassignBundle={(bid) => selected && onUnassignBundle(selected.path, bid)} onDeleteProject={(path, name) => setDeleteTarget({ path, name })}
           isGlobal={globalSelected}
@@ -210,7 +385,10 @@ export function App() {
           onUnassignGlobalSkill={onUnassignGlobalSkill}
           onUnassignGlobalPlugin={onUnassignGlobalPlugin}
           onUnassignGlobalBundle={onUnassignGlobalBundle}
+          drifted={selected ? driftedPaths.has(selected.path) : false}
         />
+        </>
+        )}
       </div>
       <AnimatePresence>
         {retireId && (
@@ -227,37 +405,68 @@ export function App() {
         {editingMcpId && <EnvEditModal mcpId={editingMcpId} onClose={() => setEditingMcpId(null)} onSaved={(next) => setDesired(next)} />}
       </AnimatePresence>
       <AnimatePresence>
+        {bundleEditorOpen && (
+          <BundleEditorModal
+            bundle={editingBundle ?? undefined}
+            libraryMcp={lib ? Object.values(lib.mcp) : []}
+            librarySkills={lib ? Object.values(lib.skills) : []}
+            libraryPlugins={lib ? Object.values(lib.plugins) : []}
+            onClose={() => { setBundleEditorOpen(false); setEditingBundle(null); }}
+            onSave={(b) => guard(async () => {
+              if (editingBundle) {
+                const next = await window.station.updateBundle(b.id, b);
+                setDesired(next);
+              } else {
+                const next = await window.station.createBundle(b);
+                setDesired(next);
+              }
+              setBundleEditorOpen(false);
+              setEditingBundle(null);
+            })}
+            onDelete={(bid) => guard(async () => {
+              const next = await window.station.deleteBundle(bid);
+              setDesired(next);
+            })}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
         {addingProject && (
           <AddProjectModal
             defaultDir={projects[0] ? projects[0].path.split('/').slice(0, -1).join('/') : undefined}
             onClose={() => setAddingProject(false)}
-            onMounted={async (path) => { await window.station.addProject(path); setAddingProject(false); await reload(); }}
+            onMounted={async (path) => {
+              // addProject 失败时抛给 modal 内联展示;成功后才关闭并刷新
+              await window.station.addProject(path);
+              setAddingProject(false);
+              await guard(reload);
+            }}
           />
         )}
       </AnimatePresence>
       <AnimatePresence>
         {deleteTarget && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(40,36,33,.28)', display: 'grid', placeItems: 'center', zIndex: 70 }}>
-            <div style={{ width: 420, background: 'var(--glass-surface-strong)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', border: '1px solid var(--glass-border)', borderRadius: 18, padding: 20, boxShadow: 'var(--glass-shadow)' }}>
-              <h2 className="serif" style={{ marginTop: 0, fontSize: 18 }}>删除项目 · {deleteTarget.name}</h2>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>{deleteTarget.path}</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
-                <motion.button whileTap={{ scale: .98 }} onClick={confirmDeleteUnmount}
-                  style={{ padding: '10px 14px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg-canvas)', color: 'var(--text-primary)', cursor: 'pointer', fontSize: 13, textAlign: 'left' }}>
-                  <div style={{ fontWeight: 600 }}>🔌 取消挂载</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>移除所有分配，星球不显示。文件保留在磁盘上。</div>
-                </motion.button>
-                <motion.button whileTap={{ scale: .98 }} onClick={confirmDeleteFolder}
-                  style={{ padding: '10px 14px', borderRadius: 12, border: '1px solid var(--state-drift)', background: 'var(--bg-canvas)', color: 'var(--state-drift)', cursor: 'pointer', fontSize: 13, textAlign: 'left' }}>
-                  <div style={{ fontWeight: 600 }}>🗑 删除本地文件夹</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>同时删除磁盘上的整个项目目录。不可恢复。</div>
-                </motion.button>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-                <motion.button whileTap={{ scale: .96 }} onClick={() => setDeleteTarget(null)} style={{ padding: '6px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-canvas)', color: 'var(--text-primary)', cursor: 'pointer' }}>取消</motion.button>
-              </div>
+          <GlassModal width={420} top onClose={() => { if (!deleteBusy) setDeleteTarget(null); }} ariaLabel={`删除项目 ${deleteTarget.name}`}>
+            <h2 className="serif" style={{ marginTop: 0, fontSize: 18 }}>删除项目 · {deleteTarget.name}</h2>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>{deleteTarget.path}</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
+              <motion.button whileTap={{ scale: .98 }} onClick={confirmDeleteUnmount} disabled={deleteBusy}
+                style={{ padding: '10px 14px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg-canvas)', color: 'var(--text-primary)', cursor: 'pointer', fontSize: 13, textAlign: 'left', opacity: deleteBusy ? .5 : 1 }}>
+                <div style={{ fontWeight: 600 }}>{STR.deleteModal.unmountTitle}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{STR.deleteModal.unmountDesc}</div>
+              </motion.button>
+              <motion.button whileTap={{ scale: .98 }} onClick={confirmDeleteFolder} disabled={deleteBusy}
+                style={{ padding: '10px 14px', borderRadius: 12, border: '1px solid var(--state-drift)', background: deleteArmed ? 'var(--state-drift)' : 'var(--bg-canvas)', color: deleteArmed ? '#fff' : 'var(--state-drift)', cursor: deleteBusy ? 'default' : 'pointer', fontSize: 13, textAlign: 'left', opacity: deleteBusy ? .6 : 1 }}>
+                <div style={{ fontWeight: 600 }}>
+                  {deleteBusy ? STR.deleteModal.trashBusy : deleteArmed ? STR.deleteModal.trashConfirm : STR.deleteModal.trashTitle}
+                </div>
+                <div style={{ fontSize: 11, color: deleteArmed ? 'rgba(255,255,255,.8)' : 'var(--text-muted)', marginTop: 2 }}>{STR.deleteModal.trashDesc}</div>
+              </motion.button>
             </div>
-          </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+              <motion.button whileTap={{ scale: .96 }} onClick={() => setDeleteTarget(null)} disabled={deleteBusy} style={{ padding: '6px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-canvas)', color: 'var(--text-primary)', cursor: 'pointer', opacity: deleteBusy ? .5 : 1 }}>{STR.deleteModal.cancel}</motion.button>
+            </div>
+          </GlassModal>
         )}
       </AnimatePresence>
     </div>

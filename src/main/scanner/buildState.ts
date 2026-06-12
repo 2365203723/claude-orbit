@@ -21,11 +21,16 @@ export function buildState(home: string = homedir()): InferredState {
 
   const userScope = {
     mcp: cj.userMcp,
-    skills: scanSkills(paths.globalSkillsDir, 'user'),
+    skills: [
+      ...scanSkills(paths.globalSkillsDir, 'user'),
+      ...scanSkills(paths.agentsSkillsDir, 'user'),
+    ],
     plugins: parsePlugins(installed, globalSettings?.enabledPlugins),
   };
 
-  const projects: ProjectState[] = cj.projectPaths.map(path => {
+  const projects: ProjectState[] = cj.projectPaths
+    .filter(path => existsSync(path))  // 剔除已删除/移动的项目目录
+    .map(path => {
     const disabled = new Set(cj.disabledByProject[path] ?? []);
     const local = (cj.projectLocalMcp[path] ?? []).filter(m => !disabled.has(m.id));
     const fromMcpJson = parseMcpJson(projectMcpJson(path)).filter(m => !disabled.has(m.id));
@@ -38,7 +43,12 @@ export function buildState(home: string = homedir()): InferredState {
       path,
       mcp,
       skills: scanSkills(projectSkillsDir(path), 'project'),
-      plugins: parsePlugins(installed, projSettings?.enabledPlugins),
+      // 项目没有显式 enabledPlugins 时视为"未分配任何插件"——
+      // parsePlugins 的"无 settings 默认全启用"只适用于全局视图,
+      // 套到项目上会把所有已安装插件当成项目级分配,seed/backfill 后全部写盘
+      plugins: projSettings?.enabledPlugins
+        ? parsePlugins(installed, projSettings.enabledPlugins)
+        : [],
     };
   });
 

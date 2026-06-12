@@ -1,12 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { springSnappy } from '../theme/springs';
-
-const BAR: Record<string, string> = {
-  mcp: '#D97757',     // 陶土橙
-  skill: '#5B7553',   // 橄榄绿
-  plugin: '#C2965A',  // 琥珀
-};
+import { KIND_COLOR } from '../theme/kinds';
 
 export function CapabilityChip(props: {
   kind: 'mcp' | 'skill' | 'plugin';
@@ -25,7 +20,7 @@ export function CapabilityChip(props: {
         fontSize: 12, color: 'var(--text-primary)', cursor: 'pointer',
       }}
     >
-      <span style={{ width: 3, height: 14, borderRadius: 2, background: BAR[props.kind] }} />
+      <span style={{ width: 3, height: 14, borderRadius: 2, background: KIND_COLOR[props.kind] }} />
       {props.label}
       {props.hasSecrets && <span title="含密钥" style={{ color: 'var(--text-muted)' }}>🔑</span>}
     </motion.span>

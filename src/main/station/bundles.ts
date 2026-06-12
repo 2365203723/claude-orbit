@@ -32,7 +32,14 @@ export function updateBundle(state: StationState, bundleId: string, updates: Par
 }
 export function deleteBundle(state: StationState, bundleId: string): StationState {
   const next = { ...state.library.bundles }; delete next[bundleId];
-  return { ...state, library: { ...state.library, bundles: next } };
+  // 级联清理:从所有项目 assignment 中移除对该 bundle 的引用,
+  // 否则会留下悬空引用(assignedBundles 里 filter(Boolean) 掉,但 state 仍脏),
+  // 且重建同名 bundle 时旧引用会错误复活。
+  const assignments: StationState['assignments'] = {};
+  for (const [path, a] of Object.entries(state.assignments)) {
+    assignments[path] = { ...a, bundles: (a.bundles ?? []).filter(id => id !== bundleId) };
+  }
+  return { ...state, library: { ...state.library, bundles: next }, assignments };
 }
 
 // ==================== 原子分配：只写 bundles[] ====================

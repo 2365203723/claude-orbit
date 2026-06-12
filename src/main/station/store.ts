@@ -1,8 +1,9 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readFileSync, existsSync, mkdirSync, renameSync } from 'node:fs';
+import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { StationState } from './types';
 import { orbitPaths } from './paths';
+import { writeJsonAtomic } from './safeJson';
 
 export function emptyState(): StationState {
   return { version: 2, library: { mcp: {}, skills: {}, plugins: {}, snippets: {}, bundles: {} }, assignments: {}, lastApplied: {} };
@@ -22,8 +23,18 @@ export function loadState(home: string = homedir()): StationState {
     } catch { /* 迁移失败继续,用新路径从空状态开始 */ }
   }
   if (!existsSync(stateFile)) return emptyState();
+  let raw: any;
   try {
-    const raw = JSON.parse(readFileSync(stateFile, 'utf8'));
+    raw = JSON.parse(readFileSync(stateFile, 'utf8'));
+  } catch {
+    // state.json 损坏(如写一半被杀截断)——绝不能静默归零后被下一次 saveState 覆盖:
+    // lastApplied 是所有清理/diff 逻辑的事实依据。把损坏文件改名保留,供手工/备份恢复。
+    try { renameSync(stateFile, `${stateFile}.corrupt-${Date.now()}`); } catch { /* 保留原文件 */ }
+    console.warn(`[store] state.json 解析失败,已移至 ${stateFile}.corrupt-*,从空状态启动`);
+    return emptyState();
+  }
+  if (!raw || typeof raw !== 'object') return emptyState();
+  {
     // 向后兼容:旧 state.json 可能没有 skills/plugins/snippets 字段
     raw.library ??= {};
     raw.library.skills ??= {};
@@ -50,11 +61,10 @@ export function loadState(home: string = homedir()): StationState {
       s.bundles ??= [];
     }
     return raw;
-  } catch { return emptyState(); }
+  }
 }
 
 export function saveState(state: StationState, home: string = homedir()): void {
   const { stateFile } = orbitPaths(home);
-  mkdirSync(dirname(stateFile), { recursive: true });
-  writeFileSync(stateFile, JSON.stringify(state, null, 2));
+  writeJsonAtomic(stateFile, state);
 }

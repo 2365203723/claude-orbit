@@ -38,3 +38,16 @@ describe('executeGlobalCleanup', () => {
     rmSync(home, { recursive: true, force: true });
   });
 });
+
+describe('executeGlobalCleanup strict read', () => {
+  it('throws on corrupt ~/.claude.json without writing', () => {
+    const home = mkdtempSync(join(tmpdir(), 'cs-gc3-'));
+    writeFileSync(resolvePaths(home).claudeJson, '{ broken');
+    saveState(emptyState(), home);
+    expect(() => executeGlobalCleanup(['x'], 'stamp-c', home)).toThrow();
+    expect(readFileSync(resolvePaths(home).claudeJson, 'utf8')).toBe('{ broken');
+    // 抛错发生在备份之前 → 不应创建 backup 目录
+    expect(existsSync(join(home, '.claude-orbit', 'backups', 'stamp-c'))).toBe(false);
+    rmSync(home, { recursive: true, force: true });
+  });
+});

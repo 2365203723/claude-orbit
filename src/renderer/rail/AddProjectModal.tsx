@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { motion } from 'motion/react';
-import { springSmooth, springSnappy } from '../theme/springs';
+import { GlassModal } from '../theme/GlassModal';
+import { springSnappy } from '../theme/springs';
 
 interface AddProjectModalProps {
   onClose: () => void;
@@ -17,14 +18,18 @@ export function AddProjectModal({ onClose, onMounted, defaultDir }: AddProjectMo
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 成功路径直接 return:onMounted 内部会卸载本组件,之后不能再 setState
   const handleCreate = useCallback(async () => {
     if (!dir || !name) return;
     setBusy(true); setError(null);
     try {
       const abs = await window.station.createProjectFolder(dir, name);
       await onMounted(abs);
-    } catch (e: any) { setError(e?.message ?? String(e)); }
-    setBusy(false);
+      return;
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+      setBusy(false);
+    }
   }, [dir, name, onMounted]);
 
   const handleMount = useCallback(async () => {
@@ -32,32 +37,16 @@ export function AddProjectModal({ onClose, onMounted, defaultDir }: AddProjectMo
     setBusy(true); setError(null);
     try {
       await onMounted(existingPath);
-    } catch (e: any) { setError(e?.message ?? String(e)); }
-    setBusy(false);
+      return;
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+      setBusy(false);
+    }
   }, [existingPath, onMounted]);
 
   return (
-    <motion.div
-      onClick={onClose}
-      initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
-      animate={{ opacity: 1, backdropFilter: 'blur(8px)' }}
-      exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
-      transition={{ duration: 0.2, ease: 'easeOut' }}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(40,36,33,.28)', display: 'grid', placeItems: 'center', zIndex: 70 }}
-    >
-      <motion.div
-        onClick={e => e.stopPropagation()}
-        initial={{ scale: 0.92, opacity: 0, y: 8 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.96, opacity: 0, y: 4 }}
-        transition={springSmooth}
-        style={{
-          width: 460, background: 'var(--glass-surface-strong)',
-          backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-          border: '1px solid var(--glass-border)', borderRadius: 18, padding: 20,
-          boxShadow: 'var(--glass-shadow)',
-        }}
-      >
+    // 挂载中禁止误触关闭
+    <GlassModal width={460} top onClose={busy ? () => {} : onClose} ariaLabel="添加项目">
         <h2 className="serif" style={{ marginTop: 0, fontSize: 18, marginBottom: 16 }}>添加项目</h2>
 
         {!mode && (
@@ -115,17 +104,17 @@ export function AddProjectModal({ onClose, onMounted, defaultDir }: AddProjectMo
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 16 }}>
             <motion.button whileTap={{ scale: .96 }} transition={springSnappy}
               onClick={() => { setMode(null); setError(null); }}
-              style={btnSecStyle}>← 返回</motion.button>
+              disabled={busy}
+              style={{ ...btnSecStyle, opacity: busy ? .5 : 1 }}>← 返回</motion.button>
             <motion.button whileTap={{ scale: .96 }} transition={springSnappy}
               onClick={mode === 'new' ? handleCreate : handleMount}
               disabled={busy}
               style={{ ...btnPriStyle, opacity: busy ? .5 : 1 }}>
-              {mode === 'new' ? '创建并挂载' : '挂载'}
+              {busy ? '挂载中…' : mode === 'new' ? '创建并挂载' : '挂载'}
             </motion.button>
           </div>
         )}
-      </motion.div>
-    </motion.div>
+    </GlassModal>
   );
 }
 

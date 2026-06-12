@@ -1,6 +1,6 @@
 {
   "name": "claude-orbit",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Claude Orbit — visual capability assembly station for Claude Code projects. Drag MCP servers, Skills, and Plugins onto project planets with instant apply.",
   "main": "out/main/index.js",
   "type": "module",
@@ -15,10 +15,10 @@
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
-    "dist:win": "npm run build && electron-builder --win",
-    "dist:linux": "npm run build && electron-builder --linux"
+    "dist:win": "npm run build && electron-builder --win"
   },
   "devDependencies": {
+    "@electron/notarize": "^3.1.1",
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
@@ -60,8 +60,13 @@
         }
       ],
       "icon": "build/icon.icns",
-      "artifactName": "Claude-Orbit-${version}-mac-${arch}.${ext}"
+      "artifactName": "Claude-Orbit-${version}-mac-${arch}.${ext}",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
+    "afterSign": "scripts/notarize.cjs",
     "win": {
       "target": [
         {
