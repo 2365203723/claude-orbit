@@ -16,6 +16,7 @@ import { unmountProject, addProject, pathExists, relinkProjectSkill } from './st
 import { scanSkillHealth } from './station/skillHealth';
 import { importSkill } from './station/skillLibrary';
 import { importDiscoveredSkills } from './station/skillScan';
+import { diagnoseDeadSkills, repairDeadSkills } from './station/skillDoctor';
 import { checkAllDrift, checkProjectDrift } from './station/drift';
 import { listBackups, restoreBackup } from './station/backup';
 import { listGlobalMcp, addGlobalMcp, removeGlobalMcp, listGlobalSkills, addGlobalSkill, removeGlobalSkill, listGlobalPlugins, addGlobalPlugin, removeGlobalPlugin, assignGlobalBundle, unassignGlobalBundle } from './station/globalSettings';
@@ -243,6 +244,12 @@ export function registerIpc(): void {
   ipcMain.handle('station:importDiscoveredSkills', () => {
     const { state, imported, skipped } = importDiscoveredSkills(loadState());
     return { state, imported, skipped };
+  });
+  // Skill Doctor:诊断死链 + 一键修复(全局副本 / git 来源)
+  ipcMain.handle('station:diagnoseDeadSkills', () => diagnoseDeadSkills(loadState()));
+  ipcMain.handle('station:repairDeadSkills', (_e, ids: string[]) => {
+    const { state, report } = repairDeadSkills(loadState(), ids);
+    return { state, report };
   });
 
   // Global settings — 像操作项目一样操作全局

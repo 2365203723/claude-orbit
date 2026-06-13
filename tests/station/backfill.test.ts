@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { backfillState } from '../../src/main/station/backfill';
 import { emptyState } from '../../src/main/station/store';
 import type { StationState } from '../../src/main/station/types';
@@ -66,16 +69,21 @@ describe('backfillState', () => {
   });
 
   it('backfills userScope items into library and marks dirty', () => {
+    const home = mkdtempSync(join(tmpdir(), 'bf-home-'));
+    const src = join(home, 'src', 's1');
+    mkdirSync(src, { recursive: true });
+    writeFileSync(join(src, 'SKILL.md'), '# s1');
     const s = emptyState();
     const r = backfillState(s, inferred({
-      skills: [{ id: 's1', scope: 'user', path: '/u/s1' }],
+      skills: [{ id: 's1', scope: 'user', path: src }],
       plugins: [{ id: 'p1', enabled: true }],
       mcp: [{ id: 'm1', scope: 'user', def: { command: 'm' }, hasSecrets: false }],
-    }));
+    }), home);
     expect(r.dirty).toBe(true);
-    expect(r.state.library.skills['s1'].sourcePath).toBe('/u/s1');
+    expect(r.state.library.skills['s1'].sourcePath).toBe(join(home, '.claude-orbit', 'library', 'skills', 's1'));
     expect(r.state.library.plugins['p1']).toBeTruthy();
     expect(r.state.library.mcp['m1']).toBeTruthy();
+    rmSync(home, { recursive: true, force: true });
   });
 
   it('does not run detectBundles when library.bundles is already non-empty', () => {

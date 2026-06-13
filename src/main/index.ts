@@ -2,6 +2,7 @@ import { app, BrowserWindow } from 'electron';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { registerIpc } from './ipc';
+import { registerTerminalIpc, killAllTerminals } from './terminal';
 import { sweepStaleTempFiles } from './station/safeJson';
 import { orbitPaths } from './station/paths';
 
@@ -32,11 +33,14 @@ function createWindow(): void {
 app.whenReady().then(() => {
   sweepTempFiles();
   registerIpc();
+  registerTerminalIpc();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+app.on('before-quit', () => killAllTerminals());
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

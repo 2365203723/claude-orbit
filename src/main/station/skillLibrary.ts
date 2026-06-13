@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, cpSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { orbitPaths } from './paths';
+import { copyDirSafe } from './copyDir';
 import type { StationState } from './types';
 import { saveState } from './store';
 
@@ -21,7 +22,7 @@ export function importSkill(state: StationState, sourcePath: string, home: strin
   if (existsSync(dest)) throw new Error(`Skill "${id}" 已存在于 Orbit 库`);
 
   mkdirSync(libDir, { recursive: true });
-  cpSync(abs, dest, { recursive: true });
+  copyDirSafe(abs, dest);
 
   const next: StationState = {
     ...state,

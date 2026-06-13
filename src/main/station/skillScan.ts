@@ -1,9 +1,9 @@
-import { existsSync, readdirSync, statSync, readFileSync, cpSync, mkdirSync } from 'node:fs';
+import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { orbitPaths } from './paths';
 import type { StationState } from './types';
 import { saveState } from './store';
+import { syncSkillIntoOrbitLibrary } from './skillLibrarySync';
 
 export interface DiscoveredSkill {
   id: string;
@@ -81,31 +81,15 @@ export function importDiscoveredSkills(state: StationState, home: string = homed
   state: StationState; imported: string[]; skipped: number;
 } {
   const discovered = scanForSkills(home);
-  const unmanaged = discovered.filter(d => !d.alreadyManaged);
-
-  const libDir = join(orbitPaths(home).orbitDir, 'library', 'skills');
-  mkdirSync(libDir, { recursive: true });
 
   let next = state;
   const imported: string[] = [];
   let skipped = 0;
 
-  for (const d of unmanaged) {
+  for (const d of discovered) {
     try {
-      const dest = join(libDir, d.id);
-      if (existsSync(dest)) { skipped++; continue; }
-      cpSync(d.sourcePath, dest, { recursive: true });
-      next = {
-        ...next,
-        library: {
-          ...next.library,
-          skills: {
-            ...next.library.skills,
-            [d.id]: { id: d.id, name: d.id, sourcePath: dest },
-          },
-        },
-      };
-      imported.push(d.id);
+      if (syncSkillIntoOrbitLibrary(next, d.id, d.sourcePath, home)) imported.push(d.id);
+      else skipped++;
     } catch { skipped++; }
   }
 

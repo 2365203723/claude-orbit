@@ -8,6 +8,8 @@ import { ConfirmModal } from './apply/ConfirmModal';
 import { EnvEditModal } from './rail/EnvEditModal';
 import { AddProjectModal } from './rail/AddProjectModal';
 import { BundleEditorModal } from './rail/BundleEditorModal';
+import { SkillDoctorModal } from './rail/SkillDoctorModal';
+import { TerminalPanel } from './terminal/TerminalPanel';
 import { GlassModal } from './theme/GlassModal';
 import { STR } from './i18n/strings';
 import type { ProjectState } from '../main/types';
@@ -52,6 +54,15 @@ export function App() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [globalSnapshot, setGlobalSnapshot] = useState<GlobalSnapshot>(emptyGlobal);
   const [ipcError, setIpcError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [doctorOpen, setDoctorOpen] = useState(false);
+  // 内置终端:底部 dock,cwd 锁定选中项目;高度可调并持久化
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalHeight, setTerminalHeight] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('orbit-terminal-height') || '');
+    return v >= 120 && v <= 700 ? v : 280;
+  });
+  const termResizeRef = useRef<number | null>(null);
   // 首次扫描完成前显示骨架屏——扫描慢时(大量项目/网络盘)不能看起来像数据丢失
   const [booted, setBooted] = useState(false);
   // 拖拽即应用进行中的项目路径——对应星球做脉冲指示,不做全屏 spinner
@@ -68,14 +79,18 @@ export function App() {
   // 过期响应防护:并发 reload 时只接受最后一次发起的结果
   const reloadSeqRef = useRef(0);
   const reloadGlobalSeqRef = useRef(0);
-  const bootedRef = useRef(false);
 
-  // 错误 toast 自动消隐
+  // toast 自动消隐
   useEffect(() => {
     if (!ipcError) return;
     const t = setTimeout(() => setIpcError(null), 6000);
     return () => clearTimeout(t);
   }, [ipcError]);
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 3500);
+    return () => clearTimeout(t);
+  }, [notice]);
   // 安全网:漏网的 unhandled rejection 也走同一 toast
   useEffect(() => {
     const handler = (e: PromiseRejectionEvent) => setIpcError(formatIpcError(e.reason));
@@ -87,7 +102,20 @@ export function App() {
     const seq = ++reloadGlobalSeqRef.current;
     const gs = await window.station.getGlobalSnapshot();
     if (seq !== reloadGlobalSeqRef.current) return; // 已有更新的请求在途,丢弃旧快照
-    const lib = desiredRef.current?.library.bundles ?? {};
+
+    // Global 右侧是磁盘实时扫描;左侧能力库来自 desired state。
+    // 如果外部刚安装了 skill,右侧会先看到,左侧仍旧。此处自动触发一次
+    // scan/import,把全局新 skill 复制进 Orbit 库并刷新 desired,保证两侧一致。
+    let desiredNow = desiredRef.current;
+    const missingGlobalSkill = gs.skills.some(s => !desiredNow?.library.skills?.[s.id]);
+    if (missingGlobalSkill) {
+      const { state: next } = await window.station.importDiscoveredSkills();
+      if (seq !== reloadGlobalSeqRef.current) return;
+      setDesired(next);
+      desiredNow = next;
+    }
+
+    const lib = desiredNow?.library.bundles ?? {};
     setGlobalSnapshot({
       mcp: gs.mcp.map(m => ({ id: m.id, hasSecrets: m.hasSecrets })),
       skills: gs.skills.map(s => s.id),
@@ -116,8 +144,7 @@ export function App() {
       }).catch(() => {});
       await reloadGlobalRef.current();
     } finally {
-      setBooted(true);
-      bootedRef.current = true; // ref 给 onFocus 用
+      setBooted(true); // 首扫结束(无论成败)即退出骨架屏;后续 reload 无感
     }
   }, []); // 用 ref 打破循环依赖
 
@@ -144,23 +171,40 @@ export function App() {
   }, [themePref]);
   const theme: 'light' | 'dark' = themePref === 'auto' ? (systemDark ? 'dark' : 'light') : themePref;
   useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
-  // 窗口重新获得焦点时自动 reload:用户切出去用 skills CLI/MCP/手工改了文件后,
-  // 切回来立刻对齐磁盘上的真实状态,消除"外部安装的 skill 不显示"的体验断层
-  useEffect(() => {
-    const onFocus = () => {
-      // 避免首屏:booted 为 false 时由首次 reload 负责
-      if (!bootedRef.current) return;
-      guard(reload);
-    };
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, [guard, reload]);
   const cycleTheme = useCallback(() => {
     setThemePref(prev => {
       const next: ThemePref = prev === 'light' ? 'dark' : prev === 'dark' ? 'auto' : 'light';
       localStorage.setItem(THEME_KEY, next);
       return next;
     });
+  }, []);
+
+  // 终端 dock 拖拽调高
+  const termHeightRef = useRef(terminalHeight);
+  useEffect(() => { termHeightRef.current = terminalHeight; }, [terminalHeight]);
+  const onTermResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    termResizeRef.current = e.clientY;
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (termResizeRef.current === null) return;
+      const delta = termResizeRef.current - e.clientY;
+      termResizeRef.current = e.clientY;
+      setTerminalHeight(h => Math.min(700, Math.max(120, h + delta)));
+    };
+    const onUp = () => {
+      if (termResizeRef.current === null) return;
+      termResizeRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      localStorage.setItem('orbit-terminal-height', String(termHeightRef.current));
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
   }, []);
 
   // 侧边栏拖拽调宽
@@ -328,34 +372,42 @@ export function App() {
             style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 10px', background: 'var(--bg-canvas)', color: 'var(--text-primary)', cursor: 'pointer', fontSize: 12, WebkitAppRegion: 'no-drag' }}>
             + 添加项目
           </motion.button>
+          <button onClick={() => setTerminalOpen(o => !o)}
+            title={selected ? `终端 · ${selected.path.split('/').pop()}` : '选中一个项目后可打开终端'}
+            disabled={!selected}
+            style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 10px', background: terminalOpen ? 'var(--accent)' : 'var(--bg-canvas)', color: terminalOpen ? '#fff' : (selected ? 'var(--text-primary)' : 'var(--text-muted)'), cursor: selected ? 'pointer' : 'not-allowed', fontSize: 12, WebkitAppRegion: 'no-drag' }}>
+            ⌨️ 终端
+          </button>
           <button onClick={cycleTheme} title="切换主题:浅色 → 深色 → 跟随系统"
             style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 10px', background: 'var(--bg-canvas)', color: 'var(--text-primary)', cursor: 'pointer', WebkitAppRegion: 'no-drag' }}>
             {THEME_LABEL[themePref]}
           </button>
         </div>
       </header>
-      {/* IPC 错误 toast——写盘失败等必须可见,绝不静默 */}
+      {/* IPC 错误/成功 toast——写盘失败等必须可见,绝不静默 */}
       <AnimatePresence>
-        {ipcError && (
+        {(ipcError || notice) && (
           <motion.div
             initial={{ y: -12, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -12, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 400, damping: 32 }}
-            onClick={() => setIpcError(null)}
-            role="alert"
+            onClick={() => { setIpcError(null); setNotice(null); }}
+            role={ipcError ? 'alert' : 'status'}
             style={{
               position: 'fixed', top: 52, left: '50%', transform: 'translateX(-50%)', zIndex: 90,
-              maxWidth: 520, padding: '8px 14px', borderRadius: 12, cursor: 'pointer',
+              maxWidth: 560, padding: '8px 14px', borderRadius: 12, cursor: 'pointer',
               background: 'var(--glass-surface-strong)', backdropFilter: 'blur(20px) saturate(180%)',
               WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-              border: '1px solid var(--state-drift)', color: 'var(--state-drift)',
+              border: `1px solid ${ipcError ? 'var(--state-drift)' : 'var(--state-applied)'}`,
+              color: ipcError ? 'var(--state-drift)' : 'var(--state-applied)',
               boxShadow: 'var(--glass-shadow)', fontSize: 12,
             }}>
-            ⚠️ {ipcError}
+            {ipcError ? `⚠️ ${ipcError}` : `✅ ${notice}`}
           </motion.div>
         )}
       </AnimatePresence>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         {!booted && desired === null ? (
           /* 首次扫描骨架屏:rail 三段 shimmer + 画布中央呼吸圆,避免被误认为数据丢失 */
@@ -396,8 +448,10 @@ export function App() {
               if (dir) { const next = await window.station.importSkill(dir); setDesired(next); }
             })}
             onImportAllSkills={() => guard(async () => {
-              const { state: next } = await window.station.importDiscoveredSkills();
+              const { state: next, imported, skipped } = await window.station.importDiscoveredSkills();
               setDesired(next);
+              window.station.scanSkillHealth().then(h => setSkillHealth(h)).catch(() => {});
+              setNotice(`已同步 ${imported.length} 个 Skill 到 Orbit 库${skipped ? `,跳过 ${skipped} 个` : ''}`);
             })}
             onEditBundle={(b) => { setEditingBundle(b); setBundleEditorOpen(true); }}
             onDeleteBundle={(bid) => guard(async () => {
@@ -405,6 +459,7 @@ export function App() {
               setDesired(next);
             })}
             deadSkillIds={skillHealth ? new Set(skillHealth.dead) : undefined}
+            onOpenDoctor={() => setDoctorOpen(true)}
           />
         </div>
         {/* 拖拽调宽手柄 */}
@@ -454,6 +509,25 @@ export function App() {
         </>
         )}
       </div>
+      {/* 内置终端 dock —— cwd 锁定选中项目;在此跑 claude/codex/git 等 */}
+      {terminalOpen && selected && (
+        <div style={{ height: terminalHeight, display: 'flex', flexDirection: 'column', borderTop: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
+          <div onMouseDown={onTermResizeStart}
+            style={{ height: 5, cursor: 'row-resize', background: 'transparent', flexShrink: 0 }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--border)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px', fontSize: 11, color: 'var(--text-muted)', borderBottom: '1px solid var(--glass-border)', flexShrink: 0 }}>
+            <span>⌨️ 终端</span>
+            <span style={{ flex: 1, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selected.path}</span>
+            <button type="button" className="icon-btn" onClick={() => setTerminalOpen(false)} aria-label="关闭终端" style={{ fontSize: 13 }}>×</button>
+          </div>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            {/* key 绑定项目路径——切换项目时重建会话,cwd 始终正确 */}
+            <TerminalPanel key={selected.path} cwd={selected.path} theme={theme} />
+          </div>
+        </div>
+      )}
+      </div>
       <AnimatePresence>
         {retireId && (
           <ConfirmModal
@@ -491,6 +565,17 @@ export function App() {
               const next = await window.station.deleteBundle(bid);
               setDesired(next);
             })}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {doctorOpen && (
+          <SkillDoctorModal
+            onClose={() => setDoctorOpen(false)}
+            onRepaired={(next) => {
+              setDesired(next);
+              window.station.scanSkillHealth().then(h => setSkillHealth(h)).catch(() => {});
+            }}
           />
         )}
       </AnimatePresence>

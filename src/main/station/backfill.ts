@@ -1,7 +1,9 @@
+import { homedir } from 'node:os';
 import type { InferredState } from '../types';
 import type { StationState } from './types';
 import { detectBundles } from './bundles';
 import { expandProjectBundles } from './bundles';
+import { syncSkillIntoOrbitLibrary } from './skillLibrarySync';
 
 export interface BackfillResult {
   state: StationState;
@@ -13,15 +15,13 @@ export interface BackfillResult {
  *  并补项目 assignments(跳过已被该项目 bundle 覆盖的条目,避免 unassign bundle 后残留)。
  *  library.bundles 为空时才自动检测 bundle。
  *  会就地修改传入的 state(与原 ipc 内联逻辑一致),并返回 dirty/bundlesDetected。 */
-export function backfillState(state: StationState, inferred: InferredState): BackfillResult {
+export function backfillState(state: StationState, inferred: InferredState, home: string = homedir()): BackfillResult {
   let dirty = false;
 
-  // 补 library
+  // 补 library。发现全局/外部安装的 skill 时,统一复制进 Orbit 库并指向副本。
+  // 即使同名已存在,也会刷新旧副本,避免 global 新装后 UI 看不到/仍指旧源。
   for (const s of inferred.userScope.skills) {
-    if (!state.library.skills[s.id]) {
-      state.library.skills[s.id] = { id: s.id, name: s.id, sourcePath: s.path };
-      dirty = true;
-    }
+    if (syncSkillIntoOrbitLibrary(state, s.id, s.path, home)) dirty = true;
   }
   for (const pl of inferred.userScope.plugins) {
     if (!state.library.plugins[pl.id]) {

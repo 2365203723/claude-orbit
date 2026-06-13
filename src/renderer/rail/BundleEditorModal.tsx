@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { motion } from 'motion/react';
 import type { LibraryBundle, LibraryMcp, LibrarySkill, LibraryPlugin } from '../../main/station/types';
 import { GlassModal } from '../theme/GlassModal';
@@ -23,6 +23,15 @@ export function BundleEditorModal({ bundle, libraryMcp, librarySkills, libraryPl
   const [selectedMcp, setSelectedMcp] = useState<Set<string>>(new Set(bundle?.mcp ?? []));
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set(bundle?.skills ?? []));
   const [selectedPlugins, setSelectedPlugins] = useState<Set<string>>(new Set(bundle?.plugins ?? []));
+  // 搜索过滤——库里可能有数百个 skill,全平铺无法选择
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  // 已选项始终可见(即使被过滤),否则取消勾选后会"消失"
+  const matchOrSelected = useCallback((id: string, selected: Set<string>) =>
+    !q || id.toLowerCase().includes(q) || selected.has(id), [q]);
+  const filteredMcp = useMemo(() => libraryMcp.filter(m => matchOrSelected(m.id, selectedMcp)), [libraryMcp, matchOrSelected, selectedMcp]);
+  const filteredSkills = useMemo(() => librarySkills.filter(s => matchOrSelected(s.id, selectedSkills)), [librarySkills, matchOrSelected, selectedSkills]);
+  const filteredPlugins = useMemo(() => libraryPlugins.filter(p => matchOrSelected(p.id, selectedPlugins)), [libraryPlugins, matchOrSelected, selectedPlugins]);
 
   const toggle = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) => {
     setter(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
@@ -79,40 +88,48 @@ export function BundleEditorModal({ bundle, libraryMcp, librarySkills, libraryPl
           style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-canvas)', color: 'var(--text-primary)', fontSize: 12, marginBottom: 16 }} />
 
         {/* Member selection */}
+        <div style={{ position: 'relative', marginBottom: 10 }}>
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="🔍 搜索 MCP / Skill / Plugin…" spellCheck={false}
+            style={{ width: '100%', boxSizing: 'border-box', padding: '6px 28px 6px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-canvas)', color: 'var(--text-primary)', fontSize: 12 }} />
+          {query && (
+            <button type="button" onClick={() => setQuery('')} aria-label="清空搜索"
+              style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13 }}>×</button>
+          )}
+        </div>
         <div style={{ overflowY: 'auto', flex: 1, marginRight: -4, paddingRight: 4 }}>
           <div style={{ marginBottom: 12 }}>
-            <div className="serif" style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>MCP 服务器 ({selectedMcp.size})</div>
+            <div className="serif" style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>MCP 服务器 ({selectedMcp.size}{q && ` · ${filteredMcp.length} 匹配`})</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-              {libraryMcp.map(m => (
+              {filteredMcp.map(m => (
                 <span key={m.id} onClick={() => toggleMcp(m.id)} style={chipStyle(selectedMcp.has(m.id))}>
                   {selectedMcp.has(m.id) ? '✓' : ''} {m.id}
                 </span>
               ))}
-              {libraryMcp.length === 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>}
+              {filteredMcp.length === 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{q ? '无匹配' : '—'}</span>}
             </div>
           </div>
 
           <div style={{ marginBottom: 12 }}>
-            <div className="serif" style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Skills ({selectedSkills.size})</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, maxHeight: 200, overflowY: 'auto' }}>
-              {librarySkills.map(s => (
+            <div className="serif" style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Skills ({selectedSkills.size}{q && ` · ${filteredSkills.length} 匹配`})</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, maxHeight: 240, overflowY: 'auto' }}>
+              {filteredSkills.map(s => (
                 <span key={s.id} onClick={() => toggleSkill(s.id)} style={chipStyle(selectedSkills.has(s.id))}>
                   {selectedSkills.has(s.id) ? '✓' : ''} {s.id}
                 </span>
               ))}
-              {librarySkills.length === 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>}
+              {filteredSkills.length === 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{q ? '无匹配' : '—'}</span>}
             </div>
           </div>
 
           <div style={{ marginBottom: 12 }}>
-            <div className="serif" style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Plugins ({selectedPlugins.size})</div>
+            <div className="serif" style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Plugins ({selectedPlugins.size}{q && ` · ${filteredPlugins.length} 匹配`})</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-              {libraryPlugins.map(p => (
+              {filteredPlugins.map(p => (
                 <span key={p.id} onClick={() => togglePlugin(p.id)} style={chipStyle(selectedPlugins.has(p.id))}>
                   {selectedPlugins.has(p.id) ? '✓' : ''} {p.id}
                 </span>
               ))}
-              {libraryPlugins.length === 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span>}
+              {filteredPlugins.length === 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{q ? '无匹配' : '—'}</span>}
             </div>
           </div>
         </div>

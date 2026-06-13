@@ -52,6 +52,8 @@ const api = {
   checkDrift: (projectPath?: string): Promise<{ drifted: string[]; total: number } | boolean> => ipcRenderer.invoke('station:checkDrift', projectPath),
   importSkill: (sourcePath: string): Promise<any> => ipcRenderer.invoke('station:importSkill', sourcePath),
   importDiscoveredSkills: (): Promise<{ state: any; imported: string[]; skipped: number }> => ipcRenderer.invoke('station:importDiscoveredSkills'),
+  diagnoseDeadSkills: (): Promise<{ id: string; sourcePath: string; sourceUrl?: string; globalCopy?: string; fixable: 'global-copy' | 'git-clone' | 'manual' }[]> => ipcRenderer.invoke('station:diagnoseDeadSkills'),
+  repairDeadSkills: (ids: string[]): Promise<{ state: any; report: { repaired: string[]; failed: { id: string; reason: string }[]; manual: string[] } }> => ipcRenderer.invoke('station:repairDeadSkills', ids),
   getGlobalSnapshot: (): Promise<{ mcp: PublicGlobalMcp[]; skills: GlobalSkillInfo[]; plugins: GlobalPluginInfo[]; bundleIds: string[] }> => ipcRenderer.invoke('station:getGlobalSnapshot'),
   // Backups
   listBackups: (): Promise<{ stamp: string; files: { originalPath: string; size: number }[] }[]> => ipcRenderer.invoke('orbit:listBackups'),
@@ -61,3 +63,30 @@ const api = {
 export type StationApi = typeof api;
 
 contextBridge.exposeInMainWorld('station', api);
+
+// ── 终端桥接(node-pty)──────────────────────────────────────────────
+// data/exit 是按 session id 分频道的事件,需用 on/off 包装暴露给渲染端
+const terminal = {
+  available: (): Promise<{ available: boolean; error: string | null }> => ipcRenderer.invoke('terminal:available'),
+  create: (opts: { id: string; cwd?: string; cols?: number; rows?: number }): Promise<{ ok: boolean; pid?: number; cwd?: string; error?: string }> =>
+    ipcRenderer.invoke('terminal:create', opts),
+  input: (id: string, data: string): void => ipcRenderer.send('terminal:input', id, data),
+  resize: (id: string, cols: number, rows: number): void => ipcRenderer.send('terminal:resize', id, cols, rows),
+  kill: (id: string): void => ipcRenderer.send('terminal:kill', id),
+  onData: (id: string, cb: (data: string) => void): (() => void) => {
+    const ch = `terminal:data:${id}`;
+    const listener = (_e: unknown, data: string) => cb(data);
+    ipcRenderer.on(ch, listener);
+    return () => ipcRenderer.off(ch, listener);
+  },
+  onExit: (id: string, cb: (code: number) => void): (() => void) => {
+    const ch = `terminal:exit:${id}`;
+    const listener = (_e: unknown, code: number) => cb(code);
+    ipcRenderer.on(ch, listener);
+    return () => ipcRenderer.off(ch, listener);
+  },
+} as const;
+
+export type TerminalApi = typeof terminal;
+
+contextBridge.exposeInMainWorld('terminal', terminal);

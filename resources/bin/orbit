@@ -1,0 +1,13 @@
+#!/bin/sh
+# orbit launcher — 由 Orbit 终端注入 PATH。
+# 优先用打包后的编译版,开发期回退到 tsx 运行源码。
+ORBIT_CLI_JS="${ORBIT_CLI_JS:-}"
+ORBIT_CLI_SRC="${ORBIT_CLI_SRC:-}"
+if [ -n "$ORBIT_CLI_JS" ] && [ -f "$ORBIT_CLI_JS" ]; then
+  exec node "$ORBIT_CLI_JS" "$@"
+elif [ -n "$ORBIT_CLI_SRC" ] && [ -f "$ORBIT_CLI_SRC" ]; then
+  exec npx --yes tsx "$ORBIT_CLI_SRC" "$@"
+else
+  echo "orbit: CLI 未找到(ORBIT_CLI_JS / ORBIT_CLI_SRC 未设置)" >&2
+  exit 1
+fi

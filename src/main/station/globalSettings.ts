@@ -1,8 +1,9 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, symlinkSync, unlinkSync, rmSync, readdirSync, lstatSync, renameSync, cpSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, symlinkSync, unlinkSync, rmSync, readdirSync, lstatSync, renameSync, statSync } from 'node:fs';
 import { resolve, join, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
 import type { McpServerDef } from '../types';
 import type { StationState, LibraryBundle, GlobalBundleApplied } from './types';
+import { copyDirSafe } from './copyDir';
 import { readJsonStrict, writeJsonAtomic } from './safeJson';
 import { backupFiles } from './backup';
 
@@ -103,7 +104,7 @@ function moveDir(src: string, dest: string): void {
     renameSync(src, dest);
   } catch (e: any) {
     if (e?.code !== 'EXDEV') throw e;
-    cpSync(src, dest, { recursive: true });
+    copyDirSafe(src, dest);
     rmSync(src, { recursive: true, force: true });
   }
 }

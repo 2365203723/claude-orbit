@@ -176,7 +176,7 @@ function Section({ title, empty, children, defaultOpen }: { title: string; empty
   );
 }
 
-export function LibraryRail({ mcp, skills, plugins, snippets, bundles, onDragStartItem, onDragEndItem, onEditMcp, onCreateBundle, onEditBundle, onDeleteBundle, onImportSkill, onImportAllSkills, deadSkillIds }: {
+export function LibraryRail({ mcp, skills, plugins, snippets, bundles, onDragStartItem, onDragEndItem, onEditMcp, onCreateBundle, onEditBundle, onDeleteBundle, onImportSkill, onImportAllSkills, onOpenDoctor, deadSkillIds }: {
   mcp: LibraryMcp[];
   skills: LibrarySkill[];
   plugins: LibraryPlugin[];
@@ -190,6 +190,7 @@ export function LibraryRail({ mcp, skills, plugins, snippets, bundles, onDragSta
   onEditBundle?: (bundle: LibraryBundle) => void;
   onImportSkill?: () => void;
   onImportAllSkills?: () => void;
+  onOpenDoctor?: () => void;
   onDeleteBundle?: (bundleId: string) => void;
 }) {
   const total = mcp.length + skills.length + plugins.length + snippets.length;
@@ -259,15 +260,15 @@ export function LibraryRail({ mcp, skills, plugins, snippets, bundles, onDragSta
             <motion.button
               whileTap={{ scale: 0.92 }}
               onClick={onImportAllSkills}
-              title="扫描全部安装位置,导入新 Skill"
+              title="同步已安装 Skills 到 Orbit 库 (~/.claude-orbit/library/skills)"
               style={{
-                flexShrink: 0, width: 28, height: 28, borderRadius: 6,
+                flexShrink: 0, height: 28, borderRadius: 6, padding: '0 8px',
                 border: '1px solid var(--glass-border)',
                 background: 'var(--glass-surface)',
                 color: 'var(--text-primary)', fontSize: 12,
-                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
               }}
-            >🔍</motion.button>
+            >🔄 同步</motion.button>
           )}
           {onImportSkill && (
             <motion.button
@@ -299,13 +300,17 @@ export function LibraryRail({ mcp, skills, plugins, snippets, bundles, onDragSta
         </div>
 
         {deadSkillIds && deadSkillIds.size > 0 && (
-          <div style={{
-            marginBottom: 8, padding: '6px 8px', borderRadius: 6,
-            background: 'rgba(209,50,33,.08)', border: '1px solid rgba(209,50,33,.25)',
-            fontSize: 11, color: 'var(--state-drift)', display: 'flex', alignItems: 'center', gap: 6,
-          }}>
-            <span>⚠️</span>
-            <span>{deadSkillIds.size} 个 Skill 的源文件已丢失(死链),无法在项目中激活</span>
+          <div
+            onClick={onOpenDoctor}
+            title="点击打开 Skill Doctor 修复"
+            style={{
+              marginBottom: 8, padding: '6px 8px', borderRadius: 6,
+              background: 'rgba(209,50,33,.08)', border: '1px solid rgba(209,50,33,.25)',
+              fontSize: 11, color: 'var(--state-drift)', display: 'flex', alignItems: 'center', gap: 6,
+              cursor: onOpenDoctor ? 'pointer' : 'default',
+            }}>
+            <span>🩺</span>
+            <span style={{ flex: 1 }}>{deadSkillIds.size} 个 Skill 源文件丢失(死链),点击修复</span>
           </div>
         )}
 

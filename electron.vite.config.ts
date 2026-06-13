@@ -2,7 +2,8 @@ import { defineConfig } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  main: { build: { rollupOptions: { input: 'src/main/index.ts' } } },
+  // node-pty 是原生模块,必须 external——打进 bundle 会丢失 .node 二进制
+  main: { build: { rollupOptions: { input: 'src/main/index.ts', external: ['node-pty'] } } },
   preload: {
     build: {
       rollupOptions: {
