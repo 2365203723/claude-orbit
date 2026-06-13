@@ -42,8 +42,16 @@ export function registerIpc(): void {
 
   // 拖拽即应用:保存期望状态后立刻写入真实配置文件,返回带 lastApplied 的新状态。
   // 取代旧的"先攒改动、再点 Apply"两步流程。
+  // 串行队列:同一时刻只能有一个 handler 改写 state.json,
+  // 防止拖拽/挂载/卸载并发触发时互相覆盖
+  let mutex: Promise<unknown> = Promise.resolve();
+  function serial<T>(fn: () => T): Promise<T> {
+    return (mutex = mutex.then(() => fn(), (_e: unknown) => fn()));
+  }
+
   function applyNow(next: StationState, projectPath: string): StationState {
-    saveState(next);
+    // executeApply 内部成功写入 ~/.claude.json/project files 后自己会 saveState。
+    // 不在这里提前 save——如果 apply 中途抛错,提前存的 state 与磁盘不一致。
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     return executeApply(next, [projectPath], stamp);
   }
@@ -77,42 +85,37 @@ export function registerIpc(): void {
   });
 
   // MCP
-  ipcMain.handle('station:assign', (_e, projectPath: string, mcpId: string) => {
-    return applyNow(assignMcp(loadState(), projectPath, mcpId), projectPath);
-  });
-  ipcMain.handle('station:unassign', (_e, projectPath: string, mcpId: string) => {
+  ipcMain.handle('station:assign', (_e, projectPath: string, mcpId: string) => serial(() =>
+    applyNow(assignMcp(loadState(), projectPath, mcpId), projectPath)));
+  ipcMain.handle('station:unassign', (_e, projectPath: string, mcpId: string) => serial(() => {
     const state = loadState();
     if (isInAssignedBundle(state, projectPath, mcpId, 'mcp')) return state;
     return applyNow(unassignMcp(state, projectPath, mcpId), projectPath);
-  });
+  }));
 
   // Skills
-  ipcMain.handle('station:assignSkill', (_e, projectPath: string, skillId: string) => {
-    return applyNow(assignSkill(loadState(), projectPath, skillId), projectPath);
-  });
-  ipcMain.handle('station:unassignSkill', (_e, projectPath: string, skillId: string) => {
+  ipcMain.handle('station:assignSkill', (_e, projectPath: string, skillId: string) => serial(() =>
+    applyNow(assignSkill(loadState(), projectPath, skillId), projectPath)));
+  ipcMain.handle('station:unassignSkill', (_e, projectPath: string, skillId: string) => serial(() => {
     const state = loadState();
     if (isInAssignedBundle(state, projectPath, skillId, 'skill')) return state;
     return applyNow(unassignSkill(state, projectPath, skillId), projectPath);
-  });
+  }));
 
   // Plugins
-  ipcMain.handle('station:assignPlugin', (_e, projectPath: string, pluginId: string) => {
-    return applyNow(assignPlugin(loadState(), projectPath, pluginId), projectPath);
-  });
-  ipcMain.handle('station:unassignPlugin', (_e, projectPath: string, pluginId: string) => {
+  ipcMain.handle('station:assignPlugin', (_e, projectPath: string, pluginId: string) => serial(() =>
+    applyNow(assignPlugin(loadState(), projectPath, pluginId), projectPath)));
+  ipcMain.handle('station:unassignPlugin', (_e, projectPath: string, pluginId: string) => serial(() => {
     const state = loadState();
     if (isInAssignedBundle(state, projectPath, pluginId, 'plugin')) return state;
     return applyNow(unassignPlugin(state, projectPath, pluginId), projectPath);
-  });
+  }));
 
   // Snippets
-  ipcMain.handle('station:assignSnippet', (_e, projectPath: string, snippetId: string) => {
-    return applyNow(assignSnippet(loadState(), projectPath, snippetId), projectPath);
-  });
-  ipcMain.handle('station:unassignSnippet', (_e, projectPath: string, snippetId: string) => {
-    return applyNow(unassignSnippet(loadState(), projectPath, snippetId), projectPath);
-  });
+  ipcMain.handle('station:assignSnippet', (_e, projectPath: string, snippetId: string) => serial(() =>
+    applyNow(assignSnippet(loadState(), projectPath, snippetId), projectPath)));
+  ipcMain.handle('station:unassignSnippet', (_e, projectPath: string, snippetId: string) => serial(() =>
+    applyNow(unassignSnippet(loadState(), projectPath, snippetId), projectPath)));
 
   // Env editing
   ipcMain.handle('station:getMcpEnv', (_e, mcpId: string) => {
@@ -153,32 +156,28 @@ export function registerIpc(): void {
     saveState(next);
     return next;
   });
-  ipcMain.handle('station:deleteBundle', (_e, bundleId: string) => {
+  ipcMain.handle('station:deleteBundle', (_e, bundleId: string) => serial(() => {
     const state = loadState();
-    // 删 bundle 前先找出哪些项目挂了它——这些项目的磁盘 symlink/MCP 需随之清理
     const affected = Object.entries(state.assignments)
       .filter(([, a]) => (a.bundles ?? []).includes(bundleId))
       .map(([path]) => path);
     const next = deleteBundle(state, bundleId);
-    saveState(next);
-    if (affected.length === 0) return next;
-    // 对受影响项目重新 apply,移除该 bundle 写下的 symlink/local-scope 条目
+    // executeApply 内部成功写盘后会 saveState,不在这里提前存
+    if (affected.length === 0) { saveState(next); return next; }
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     return executeApply(next, affected, stamp);
-  });
-  ipcMain.handle('station:assignBundle', (_e, projectPath: string, bundleId: string) => {
-    return applyNow(assignBundle(loadState(), projectPath, bundleId), projectPath);
-  });
-  ipcMain.handle('station:unassignBundle', (_e, projectPath: string, bundleId: string) => {
-    return applyNow(unassignBundle(loadState(), projectPath, bundleId), projectPath);
-  });
+  }));
+  ipcMain.handle('station:assignBundle', (_e, projectPath: string, bundleId: string) => serial(() =>
+    applyNow(assignBundle(loadState(), projectPath, bundleId), projectPath)));
+  ipcMain.handle('station:unassignBundle', (_e, projectPath: string, bundleId: string) => serial(() =>
+    applyNow(unassignBundle(loadState(), projectPath, bundleId), projectPath)));
 
   // Projects
-  ipcMain.handle('station:unmountProject', (_e, projectPath: string) => {
+  ipcMain.handle('station:unmountProject', (_e, projectPath: string) => serial(() => {
     const next = unmountProject(loadState(), projectPath);
     saveState(next);
     return next;
-  });
+  }));
   ipcMain.handle('station:addProject', (_e, projectPath: string) => {
     const state = loadState();
     const inferred = buildState();

@@ -373,9 +373,9 @@ export function App() {
             + 添加项目
           </motion.button>
           <button onClick={() => setTerminalOpen(o => !o)}
-            title={selected ? `终端 · ${selected.path.split('/').pop()}` : '选中一个项目后可打开终端'}
-            disabled={!selected}
-            style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 10px', background: terminalOpen ? 'var(--accent)' : 'var(--bg-canvas)', color: terminalOpen ? '#fff' : (selected ? 'var(--text-primary)' : 'var(--text-muted)'), cursor: selected ? 'pointer' : 'not-allowed', fontSize: 12, WebkitAppRegion: 'no-drag' }}>
+            title={selected ? `终端 · ${selected.path.split('/').pop()}` : globalSelected ? '终端 · ~ (全局)' : '选中项目后可打开终端'}
+            disabled={!selected && !globalSelected}
+            style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '4px 10px', background: terminalOpen ? 'var(--accent)' : 'var(--bg-canvas)', color: terminalOpen ? '#fff' : (selected || globalSelected ? 'var(--text-primary)' : 'var(--text-muted)'), cursor: selected || globalSelected ? 'pointer' : 'not-allowed', fontSize: 12, WebkitAppRegion: 'no-drag' }}>
             ⌨️ 终端
           </button>
           <button onClick={cycleTheme} title="切换主题:浅色 → 深色 → 跟随系统"
@@ -509,8 +509,8 @@ export function App() {
         </>
         )}
       </div>
-      {/* 内置终端 dock —— cwd 锁定选中项目;在此跑 claude/codex/git 等 */}
-      {terminalOpen && selected && (
+      {/* 内置终端 dock —— 选中项目时 cwd=项目路径;选中 Global 时 cwd=~ */}
+      {terminalOpen && (selected || globalSelected) &&
         <div style={{ height: terminalHeight, display: 'flex', flexDirection: 'column', borderTop: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
           <div onMouseDown={onTermResizeStart}
             style={{ height: 5, cursor: 'row-resize', background: 'transparent', flexShrink: 0 }}
@@ -518,15 +518,13 @@ export function App() {
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 10px', fontSize: 11, color: 'var(--text-muted)', borderBottom: '1px solid var(--glass-border)', flexShrink: 0 }}>
             <span>⌨️ 终端</span>
-            <span style={{ flex: 1, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selected.path}</span>
+            <span style={{ flex: 1, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selected ? selected.path : '~'}</span>
             <button type="button" className="icon-btn" onClick={() => setTerminalOpen(false)} aria-label="关闭终端" style={{ fontSize: 13 }}>×</button>
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
-            {/* key 绑定项目路径——切换项目时重建会话,cwd 始终正确 */}
-            <TerminalPanel key={selected.path} cwd={selected.path} theme={theme} />
+            <TerminalPanel key={selected ? selected.path : '~'} cwd={selected ? selected.path : ''} theme={theme} />
           </div>
-        </div>
-      )}
+        </div>}
       </div>
       <AnimatePresence>
         {retireId && (

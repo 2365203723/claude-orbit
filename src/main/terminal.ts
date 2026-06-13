@@ -94,11 +94,16 @@ export function registerTerminalIpc(): void {
       const wc = e.sender;
       sessions.set(opts.id, { pty: p, wc });
 
+      // WebContents 销毁(窗口关闭/reload)时杀掉 pty,避免 shell 进程变孤儿
+      const onDestroyed = () => { try { p.kill(); } catch { /* 已退出 */ } sessions.delete(opts.id); };
+      wc.once('destroyed', onDestroyed);
+
       p.onData(data => {
         if (!wc.isDestroyed()) wc.send(`terminal:data:${opts.id}`, data);
       });
       p.onExit(({ exitCode }) => {
         if (!wc.isDestroyed()) wc.send(`terminal:exit:${opts.id}`, exitCode);
+        wc.removeListener('destroyed', onDestroyed);
         sessions.delete(opts.id);
       });
       return { ok: true, pid: p.pid, cwd };
