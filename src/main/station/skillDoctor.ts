@@ -1,12 +1,12 @@
-import { existsSync, statSync, readFileSync, mkdtempSync, rmSync, mkdirSync } from 'node:fs';
-import { join, dirname, basename } from 'node:path';
-import { homedir, tmpdir } from 'node:os';
-import { execFileSync } from 'node:child_process';
+import { existsSync, statSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 import { orbitPaths } from './paths';
 import type { StationState } from './types';
 import { saveState } from './store';
 import { syncSkillIntoOrbitLibrary } from './skillLibrarySync';
 import { copyDirSafe } from './copyDir';
+import { cloneRepoShallow, locateSkillDir } from './installSkill';
 
 export interface DeadSkill {
   id: string;
@@ -103,15 +103,19 @@ export function repairDeadSkills(
     arr.push(d); byRepo.set(d.sourceUrl, arr);
   }
   for (const [url, items] of byRepo) {
-    const tmp = mkdtempSync(join(tmpdir(), 'orbit-doctor-'));
-    const repo = join(tmp, 'r');
+    let cloned: { tmp: string; repo: string };
     try {
-      execFileSync('git', ['clone', '--depth', '1', url, repo], { stdio: 'pipe', timeout: 120000 });
+      cloned = cloneRepoShallow(url);
+    } catch (e: any) {
+      for (const d of items) report.failed.push({ id: d.id, reason: e?.message ?? String(e) });
+      continue;
+    }
+    const { tmp, repo } = cloned;
+    try {
       for (const d of items) {
         try {
-          const rel = d.skillPath ?? '';
-          const srcDir = basename(rel) === 'SKILL.md' ? join(repo, dirname(rel)) : join(repo, rel, d.id);
-          if (!existsSync(join(srcDir, 'SKILL.md'))) { report.failed.push({ id: d.id, reason: '仓库内未找到 SKILL.md' }); continue; }
+          // doctor 是 overwrite-in-place,用低层 locateSkillDir 而非带冲突 guard 的 installSkillFromGit
+          const srcDir = locateSkillDir(repo, d.skillPath, d.id);
           const dest = join(libDir, d.id);
           copyDirSafe(srcDir, dest);
           next.library.skills[d.id] = { id: d.id, name: d.id, sourcePath: dest };
@@ -120,8 +124,6 @@ export function repairDeadSkills(
           report.failed.push({ id: d.id, reason: e?.message ?? String(e) });
         }
       }
-    } catch (e: any) {
-      for (const d of items) report.failed.push({ id: d.id, reason: `clone 失败: ${e?.message ?? e}` });
     } finally {
       try { rmSync(tmp, { recursive: true, force: true }); } catch { /* ok */ }
     }
