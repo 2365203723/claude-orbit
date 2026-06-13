@@ -233,7 +233,7 @@ export function LibraryRail({ mcp, skills, plugins, snippets, bundles, onDragSta
 
   return (
     <aside style={{ width: 200, background: 'var(--bg-rail)', borderRight: '1px solid var(--border)', overflow: 'hidden' }}>
-      <RubberScroll style={{ height: '100%', overflowY: 'auto', padding: 16 }}>
+      <RubberScroll className="rail-scroll" style={{ height: '100%', overflowY: 'auto', padding: 16 }}>
         <div className="serif" style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
           {STR.library.title} {total > 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>({total})</span>}
         </div>

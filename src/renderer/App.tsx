@@ -18,6 +18,10 @@ function emptyGlobal(): GlobalSnapshot { return { mcp: [], skills: [], plugins: 
 
 type ThemePref = 'light' | 'dark' | 'auto';
 const THEME_KEY = 'orbit-theme';
+const SIDEBAR_WIDTH_KEY = 'orbit-sidebar-width';
+const SIDEBAR_MIN = 180;
+const SIDEBAR_MAX = 480;
+const SIDEBAR_DEFAULT = 260;
 const THEME_LABEL: Record<ThemePref, string> = { light: '☀️ 浅色', dark: '🌙 深色', auto: '🌗 跟随系统' };
 
 export function App() {
@@ -31,6 +35,11 @@ export function App() {
     const saved = localStorage.getItem(THEME_KEY);
     return saved === 'light' || saved === 'dark' || saved === 'auto' ? saved : 'auto';
   });
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) || '');
+    return v >= SIDEBAR_MIN && v <= SIDEBAR_MAX ? v : SIDEBAR_DEFAULT;
+  });
+  const sidebarResizeRef = useRef<{ startX: number; startW: number } | null>(null);
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   // 移除全局 MCP 可能带走 ~/.claude.json 里的密钥配置——经确认弹窗后才执行
   const [retireId, setRetireId] = useState<string | null>(null);
@@ -59,6 +68,7 @@ export function App() {
   // 过期响应防护:并发 reload 时只接受最后一次发起的结果
   const reloadSeqRef = useRef(0);
   const reloadGlobalSeqRef = useRef(0);
+  const bootedRef = useRef(false);
 
   // 错误 toast 自动消隐
   useEffect(() => {
@@ -106,7 +116,8 @@ export function App() {
       }).catch(() => {});
       await reloadGlobalRef.current();
     } finally {
-      setBooted(true); // 首扫结束(无论成败)即退出骨架屏;后续 reload 无感
+      setBooted(true);
+      bootedRef.current = true; // ref 给 onFocus 用
     }
   }, []); // 用 ref 打破循环依赖
 
@@ -133,12 +144,54 @@ export function App() {
   }, [themePref]);
   const theme: 'light' | 'dark' = themePref === 'auto' ? (systemDark ? 'dark' : 'light') : themePref;
   useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
+  // 窗口重新获得焦点时自动 reload:用户切出去用 skills CLI/MCP/手工改了文件后,
+  // 切回来立刻对齐磁盘上的真实状态,消除"外部安装的 skill 不显示"的体验断层
+  useEffect(() => {
+    const onFocus = () => {
+      // 避免首屏:booted 为 false 时由首次 reload 负责
+      if (!bootedRef.current) return;
+      guard(reload);
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [guard, reload]);
   const cycleTheme = useCallback(() => {
     setThemePref(prev => {
       const next: ThemePref = prev === 'light' ? 'dark' : prev === 'dark' ? 'auto' : 'light';
       localStorage.setItem(THEME_KEY, next);
       return next;
     });
+  }, []);
+
+  // 侧边栏拖拽调宽
+  const sidebarFinalRef = useRef(SIDEBAR_DEFAULT);
+  useEffect(() => { sidebarFinalRef.current = sidebarWidth; }, [sidebarWidth]);
+  const onSidebarResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    sidebarResizeRef.current = { startX: e.clientX, startW: sidebarWidth };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [sidebarWidth]);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!sidebarResizeRef.current) return;
+      const delta = e.clientX - sidebarResizeRef.current.startX;
+      const w = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, sidebarResizeRef.current.startW + delta));
+      setSidebarWidth(w);
+    };
+    const onUp = () => {
+      if (!sidebarResizeRef.current) return;
+      sidebarResizeRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarFinalRef.current));
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
   }, []);
 
   // Global dragover handler
@@ -307,7 +360,7 @@ export function App() {
         {!booted && desired === null ? (
           /* 首次扫描骨架屏:rail 三段 shimmer + 画布中央呼吸圆,避免被误认为数据丢失 */
           <>
-            <aside style={{ width: 200, background: 'var(--bg-rail)', borderRight: '1px solid var(--border)', padding: 16 }} aria-busy="true" aria-label="正在扫描配置">
+            <aside style={{ width: sidebarWidth, background: 'var(--bg-rail)', borderRight: '1px solid var(--border)', padding: 16 }} aria-busy="true" aria-label="正在扫描配置">
               {[0, 1, 2].map(i => (
                 <motion.div key={i}
                   animate={{ opacity: [0.3, 0.7, 0.3] }}
@@ -327,7 +380,7 @@ export function App() {
           </>
         ) : (
         <>
-        <div style={{ display: 'flex', flexDirection: 'column', width: 200 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', width: sidebarWidth, flexShrink: 0 }}>
           <LibraryRail
             mcp={lib ? Object.values(lib.mcp) : []}
             skills={lib ? Object.values(lib.skills) : []}
@@ -354,6 +407,17 @@ export function App() {
             deadSkillIds={skillHealth ? new Set(skillHealth.dead) : undefined}
           />
         </div>
+        {/* 拖拽调宽手柄 */}
+        <div
+          onMouseDown={onSidebarResizeStart}
+          style={{
+            width: 4, cursor: 'col-resize', flexShrink: 0,
+            background: 'transparent',
+            transition: 'background .15s',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--border)')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+        />
         <Canvas
           projects={projects}
           desiredMcp={desired?.library.mcp ?? {}}
