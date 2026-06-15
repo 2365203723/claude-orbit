@@ -12,7 +12,7 @@ interface AssignmentData {
   mcp: string[]; skills: string[]; plugins: string[]; snippets: string[]; bundles: string[];
 }
 
-export function DetailPanel({ project, assignments, desiredBundles, desiredMcp, onUnassign, onUnassignBundle, onDeleteProject, isGlobal, globalSnapshot, onUnassignGlobalMcp, onUnassignGlobalSkill, onUnassignGlobalPlugin, onUnassignGlobalBundle, drifted, deadSkillIds }: {
+export function DetailPanel({ project, assignments, desiredBundles, desiredMcp, onUnassign, onUnassignBundle, onDeleteProject, isGlobal, globalSnapshot, onUnassignGlobalMcp, onUnassignGlobalSkill, onUnassignGlobalPlugin, onUnassignGlobalBundle, deadSkillIds }: {
   project: ProjectState | null;
   assignments?: AssignmentData;
   desiredBundles: Record<string, LibraryBundle>;
@@ -24,7 +24,6 @@ export function DetailPanel({ project, assignments, desiredBundles, desiredMcp, 
   globalSnapshot?: GlobalSnapshot;
   onUnassignGlobalMcp?: (mcpId: string) => void;
   onUnassignGlobalSkill?: (skillId: string) => void;
-  drifted?: boolean;
   onUnassignGlobalPlugin?: (pluginId: string) => void;
   onUnassignGlobalBundle?: (bundleId: string) => void;
   // bundle 展开的 skill 里,死链/空壳的 id——渲染时标「不可用」
@@ -130,16 +129,6 @@ export function DetailPanel({ project, assignments, desiredBundles, desiredMcp, 
           {project.path.split('/').pop()}
         </h2>
         <div style={{ fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-all', marginBottom: 8 }}>{project.path}</div>
-        {drifted && (
-          <div style={{
-            marginBottom: 10, padding: '6px 10px', borderRadius: 8,
-            background: 'rgba(209,50,33,.08)', border: '1px solid rgba(209,50,33,.25)',
-            fontSize: 11, color: 'var(--state-drift)', display: 'flex', alignItems: 'center', gap: 6,
-          }}>
-            <span>⚠️</span>
-            <span>磁盘配置已被外部改动,与 Orbit 记录不一致。下次应用将覆盖这些改动。</span>
-          </div>
-        )}
         {onDeleteProject && (
           <motion.button whileTap={{ scale: .96 }} transition={{ type: 'spring', stiffness: 500, damping: 30, mass: .8 }}
             onClick={() => onDeleteProject(project.path, project.path.split('/').pop() || project.path)}

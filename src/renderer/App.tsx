@@ -31,7 +31,6 @@ export function App() {
   const [desired, setDesired] = useState<StationState | null>(null);
   const [projects, setProjects] = useState<ProjectState[]>([]);
   const [skillHealth, setSkillHealth] = useState<{ dead: string[]; incomplete: string[] } | null>(null);
-  const [driftedPaths, setDriftedPaths] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<ProjectState | null>(null);
   const [globalSelected, setGlobalSelected] = useState(false);
   const [themePref, setThemePref] = useState<ThemePref>(() => {
@@ -152,11 +151,8 @@ export function App() {
       // 选中的项目对象是按引用持有的旧快照——重新指向磁盘扫描后的新对象,
       // 否则右侧详情面板在 apply / 增删项目后仍显示陈旧的 applied/pending 状态
       setSelected(prev => prev ? (inferred.projects.find(p => p.path === prev.path) ?? null) : null);
-      // 后台扫描 skill 源健康 + 漂移(不阻塞主界面)
+      // 后台扫描 skill 源健康(不阻塞主界面)
       window.station.scanSkillHealth().then(h => setSkillHealth(h)).catch(() => {});
-      window.station.checkDrift().then(r => {
-        if (r && !Array.isArray(r)) setDriftedPaths(new Set((r as { drifted: string[] }).drifted));
-      }).catch(() => {});
       await reloadGlobalRef.current();
     } finally {
       setBooted(true); // 首扫结束(无论成败)即退出骨架屏;后续 reload 无感
@@ -524,7 +520,6 @@ export function App() {
           onUnassignGlobalSkill={onUnassignGlobalSkill}
           onUnassignGlobalPlugin={onUnassignGlobalPlugin}
           onUnassignGlobalBundle={onUnassignGlobalBundle}
-          drifted={selected ? driftedPaths.has(selected.path) : false}
           deadSkillIds={skillHealth ? new Set([...skillHealth.dead, ...skillHealth.incomplete]) : undefined}
         />
         </>

@@ -17,7 +17,6 @@ import { scanSkillHealth } from './station/skillHealth';
 import { importSkill } from './station/skillLibrary';
 import { importDiscoveredSkills } from './station/skillScan';
 import { diagnoseDeadSkills, repairDeadSkills, removeDeadSkills } from './station/skillDoctor';
-import { checkAllDrift, checkProjectDrift } from './station/drift';
 import { listBackups, restoreBackup } from './station/backup';
 import { listGlobalMcp, addGlobalMcp, removeGlobalMcp, listGlobalSkills, addGlobalSkill, removeGlobalSkill, listGlobalPlugins, addGlobalPlugin, removeGlobalPlugin, assignGlobalBundle, unassignGlobalBundle } from './station/globalSettings';
 import type { GlobalMcpInfo } from './station/globalSettings';
@@ -300,12 +299,6 @@ export function registerIpc(): void {
     bundleIds: loadState().globalBundles ?? [],
   }));
 
-  // Drift detection:检测项目磁盘配置与 lastApplied 快照的偏移
-  ipcMain.handle('station:checkDrift', (_e, projectPath?: string) => {
-    const state = loadState();
-    if (projectPath) return checkProjectDrift(state, projectPath);
-    return checkAllDrift(state);
-  });
 
   // Backups — 列出与恢复(restoreBackup 内部做路径白名单校验 + 原子写)
   ipcMain.handle('orbit:listBackups', () => listBackups());

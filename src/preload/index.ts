@@ -49,7 +49,6 @@ const api = {
   assignGlobalBundle: (bundleId: string): Promise<boolean> => ipcRenderer.invoke('station:assignGlobalBundle', bundleId),
   unassignGlobalBundle: (bundleId: string): Promise<boolean> => ipcRenderer.invoke('station:unassignGlobalBundle', bundleId),
   scanSkillHealth: (): Promise<{ total: number; healthy: number; dead: string[]; incomplete: string[] }> => ipcRenderer.invoke('station:scanSkillHealth'),
-  checkDrift: (projectPath?: string): Promise<{ drifted: string[]; total: number } | boolean> => ipcRenderer.invoke('station:checkDrift', projectPath),
   importSkill: (sourcePath: string): Promise<any> => ipcRenderer.invoke('station:importSkill', sourcePath),
   importDiscoveredSkills: (): Promise<{ state: any; imported: string[]; skipped: number }> => ipcRenderer.invoke('station:importDiscoveredSkills'),
   diagnoseDeadSkills: (): Promise<{ id: string; sourcePath: string; sourceUrl?: string; globalCopy?: string; fixable: 'global-copy' | 'git-clone' | 'manual' }[]> => ipcRenderer.invoke('station:diagnoseDeadSkills'),
